@@ -3495,7 +3495,6 @@ static int s3c_fb_ioctl(struct fb_info *info, unsigned int cmd,
 		ret = s3c_fb_set_vsync_int(info, p.vsync);
 		break;
 
-#ifdef CONFIG_ION_EXYNOS
 	case S3CFB_WIN_CONFIG:
 		if (copy_from_user(&p.win_data,
 				   (struct s3c_fb_win_config_data __user *)arg,
@@ -3570,7 +3569,6 @@ static int s3c_fb_ioctl(struct fb_info *info, unsigned int cmd,
 		}
 		ret = 0;
 		break;
-#endif
 
 	default:
 		ret = -ENOTTY;
