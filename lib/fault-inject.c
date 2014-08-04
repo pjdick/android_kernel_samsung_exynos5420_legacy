@@ -101,6 +101,10 @@ static inline bool fail_stacktrace(struct fault_attr *attr)
 
 bool should_fail(struct fault_attr *attr, ssize_t size)
 {
+	/* No need to check any other properties if the probability is 0 */
+	if (attr->probability == 0)
+		return false;
+
 	if (attr->task_filter && !fail_task(attr, current))
 		return false;
 
@@ -118,7 +122,7 @@ bool should_fail(struct fault_attr *attr, ssize_t size)
 			return false;
 	}
 
-	if (attr->probability <= random32() % 100)
+	if (attr->probability <= prandom_u32() % 100)
 		return false;
 
 	if (!fail_stacktrace(attr))
@@ -193,7 +197,7 @@ static int debugfs_atomic_t_get(void *data, u64 *val)
 DEFINE_SIMPLE_ATTRIBUTE(fops_atomic_t, debugfs_atomic_t_get,
 			debugfs_atomic_t_set, "%lld\n");
 
-static struct dentry *_debugfs_create_atomic_t(const char *name, umode_t mode,
+static struct dentry *debugfs_create_atomic_t(const char *name, umode_t mode,
 				struct dentry *parent, atomic_t *value)
 {
 	return debugfs_create_file(name, mode, parent, value, &fops_atomic_t);
@@ -213,9 +217,9 @@ struct dentry *fault_create_debugfs_attr(const char *name,
 		goto fail;
 	if (!debugfs_create_ul("interval", mode, dir, &attr->interval))
 		goto fail;
-	if (!_debugfs_create_atomic_t("times", mode, dir, &attr->times))
+	if (!debugfs_create_atomic_t("times", mode, dir, &attr->times))
 		goto fail;
-	if (!_debugfs_create_atomic_t("space", mode, dir, &attr->space))
+	if (!debugfs_create_atomic_t("space", mode, dir, &attr->space))
 		goto fail;
 	if (!debugfs_create_ul("verbose", mode, dir, &attr->verbose))
 		goto fail;

@@ -1,10 +1,7 @@
 config USB_DWC3
 	tristate "DesignWare USB3 DRD Core Support"
-	depends on (USB && USB_GADGET)
-	select USB_OTG_UTILS
-	select USB_GADGET_DUALSPEED
-	select USB_GADGET_SUPERSPEED
-	select USB_XHCI_PLATFORM
+	depends on (USB || USB_GADGET) && GENERIC_HARDIRQS
+	select USB_XHCI_PLATFORM if USB_SUPPORT && USB_XHCI_HCD
 	help
 	  Say Y or M here if your system has a Dual Role SuperSpeed
 	  USB controller based on the DesignWare USB3 IP Core.
@@ -12,53 +9,46 @@ config USB_DWC3
 	  If you choose to build this driver is a dynamically linked
 	  module, the module will be called dwc3.ko.
 
-config USB_EXYNOS_DRD
-	bool "Exynos SuperSpeed USB3.0 DRD core"
-	depends on EXYNOS5_DEV_USB3_DRD
-	select USB_OTG_UTILS
-	help
-	  Say Y here if your system has an Exynos SuperSpeed USB3.0
-	  Dual Role Device controller based on DesignWare USB3 IP
-	  Core.
-
-if USB_EXYNOS_DRD
+if USB_DWC3
 
 choice
-	prompt "EXYNOS DesignWare USB3 DRD channel (temporarily)"
-	depends on SOC_EXYNOS5410 || SOC_EXYNOS5420
-	default USB_EXYNOS5_USB3_DRD_CH0
-	help
-	  Samsung EXYNOS5410 and EXYNOS5420 SoC have two DRD channels. This option allows to activate
-	  one of the DRD channels.
+	bool "DWC3 Mode Selection"
+	default USB_DWC3_DUAL_ROLE if (USB && USB_GADGET)
+	default USB_DWC3_HOST if (USB && !USB_GADGET)
+	default USB_DWC3_GADGET if (!USB && USB_GADGET)
 
-	  NOTE: this is temporarily and will be removed once multiple channels
-	  operation has been fully tested.
-
-config USB_EXYNOS5_USB3_DRD_CH0
-	boolean "Channel0"
+config USB_DWC3_HOST
+	bool "Host only mode"
+	depends on USB=y || USB=USB_DWC3
 	help
-	  Use DRD channel 0.
+	  Select this when you want to use DWC3 in host mode only,
+	  thereby the gadget feature will be regressed.
 
-config USB_EXYNOS5_USB3_DRD_CH1
-	boolean "Channel1"
+config USB_DWC3_GADGET
+	bool "Gadget only mode"
+	depends on USB_GADGET=y || USB_GADGET=USB_DWC3
 	help
-	  Use DRD channel 1.
+	  Select this when you want to use DWC3 in gadget mode only,
+	  thereby the host feature will be regressed.
+
+config USB_DWC3_DUAL_ROLE
+	bool "Dual Role mode"
+	depends on ((USB=y || USB=USB_DWC3) && (USB_GADGET=y || USB_GADGET=USB_DWC3))
+	help
+	  This is the default mode of working of DWC3 controller where
+	  both host and gadget features are enabled.
+
 endchoice
 
-endif
-
-if (USB_DWC3 || USB_EXYNOS_DRD)
-
 config USB_DWC3_DEBUG
-	bool "Enable DWC3/Exynos DRD core Debugging Messages"
+	bool "Enable Debugging Messages"
 	help
-	  Say Y here to enable debugging messages on DWC3/Exynos DRD Driver.
+	  Say Y here to enable debugging messages on DWC3 Driver.
 
 config USB_DWC3_VERBOSE
-	bool "Enable DWC3/Exynos DRD core Verbose Debugging Messages"
+	bool "Enable Verbose Debugging Messages"
 	depends on USB_DWC3_DEBUG
 	help
-	  Say Y here to enable verbose debugging messages on DWC3/Exynos DRD
-	  Driver.
+	  Say Y here to enable verbose debugging messages on DWC3 Driver.
 
 endif

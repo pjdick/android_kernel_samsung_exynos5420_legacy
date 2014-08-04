@@ -12,6 +12,7 @@
 
 #include <asm/smp_plat.h>
 #include <asm/tlbflush.h>
+#include <asm/mmu_context.h>
 
 /**********************************************************************/
 
@@ -64,6 +65,11 @@ static inline void ipi_flush_tlb_kernel_range(void *arg)
 	local_flush_tlb_kernel_range(ta->ta_start, ta->ta_end);
 }
 
+static inline void ipi_flush_bp_all(void *ignored)
+{
+	local_flush_bp_all();
+}
+
 #ifdef CONFIG_ARM_ERRATA_798181
 static int erratum_a15_798181(void)
 {
@@ -81,13 +87,47 @@ static int erratum_a15_798181(void)
 }
 #endif
 
-static void flush_tlb_a15_erratum(void)
+static void ipi_flush_tlb_a15_erratum(void *arg)
+{
+	dmb();
+}
+
+static void broadcast_tlb_a15_erratum(void)
 {
 	if (!erratum_a15_798181())
 		return;
 
 	dummy_flush_tlb_a15_erratum();
+	smp_call_function(ipi_flush_tlb_a15_erratum, NULL, 1);
+}
+
+static void broadcast_tlb_mm_a15_erratum(struct mm_struct *mm)
+{
+	int cpu, this_cpu;
+	cpumask_t mask = { CPU_BITS_NONE };
+
+	if (!erratum_a15_798181())
+		return;
+
 	dummy_flush_tlb_a15_erratum();
+	this_cpu = get_cpu();
+	for_each_online_cpu(cpu) {
+		if (cpu == this_cpu)
+			continue;
+		/*
+		 * We only need to send an IPI if the other CPUs are running
+		 * the same ASID as the one being invalidated. There is no
+		 * need for locking around the active_asids check since the
+		 * switch_mm() function has at least one dmb() (as required by
+		 * this workaround) in case a context switch happens on
+		 * another CPU after the condition below.
+		 */
+		if (atomic64_read(&mm->context.id) ==
+		    atomic64_read(&per_cpu(active_asids, cpu)))
+			cpumask_set_cpu(cpu, &mask);
+	}
+	smp_call_function_many(&mask, ipi_flush_tlb_a15_erratum, NULL, 1);
+	put_cpu();
 }
 
 void flush_tlb_all(void)
@@ -96,7 +136,7 @@ void flush_tlb_all(void)
 		on_each_cpu(ipi_flush_tlb_all, NULL, 1);
 	else
 		local_flush_tlb_all();
-	flush_tlb_a15_erratum();
+	broadcast_tlb_a15_erratum();
 }
 
 void flush_tlb_mm(struct mm_struct *mm)
@@ -105,7 +145,7 @@ void flush_tlb_mm(struct mm_struct *mm)
 		on_each_cpu_mask(mm_cpumask(mm), ipi_flush_tlb_mm, mm, 1);
 	else
 		local_flush_tlb_mm(mm);
-	flush_tlb_a15_erratum();
+	broadcast_tlb_mm_a15_erratum(mm);
 }
 
 void flush_tlb_page(struct vm_area_struct *vma, unsigned long uaddr)
@@ -118,7 +158,7 @@ void flush_tlb_page(struct vm_area_struct *vma, unsigned long uaddr)
 					&ta, 1);
 	} else
 		local_flush_tlb_page(vma, uaddr);
-	flush_tlb_a15_erratum();
+	broadcast_tlb_mm_a15_erratum(vma->vm_mm);
 }
 
 void flush_tlb_kernel_page(unsigned long kaddr)
@@ -129,7 +169,7 @@ void flush_tlb_kernel_page(unsigned long kaddr)
 		on_each_cpu(ipi_flush_tlb_kernel_page, &ta, 1);
 	} else
 		local_flush_tlb_kernel_page(kaddr);
-	flush_tlb_a15_erratum();
+	broadcast_tlb_a15_erratum();
 }
 
 void flush_tlb_range(struct vm_area_struct *vma,
@@ -144,7 +184,7 @@ void flush_tlb_range(struct vm_area_struct *vma,
 					&ta, 1);
 	} else
 		local_flush_tlb_range(vma, start, end);
-	flush_tlb_a15_erratum();
+	broadcast_tlb_mm_a15_erratum(vma->vm_mm);
 }
 
 void flush_tlb_kernel_range(unsigned long start, unsigned long end)
@@ -156,6 +196,13 @@ void flush_tlb_kernel_range(unsigned long start, unsigned long end)
 		on_each_cpu(ipi_flush_tlb_kernel_range, &ta, 1);
 	} else
 		local_flush_tlb_kernel_range(start, end);
-	flush_tlb_a15_erratum();
+	broadcast_tlb_a15_erratum();
 }
 
+void flush_bp_all(void)
+{
+	if (tlb_ops_need_broadcast())
+		on_each_cpu(ipi_flush_bp_all, NULL, 1);
+	else
+		local_flush_bp_all();
+}

@@ -86,7 +86,6 @@ static inline int atomic_dec_unless_positive(atomic_t *p)
 }
 #endif
 
-#ifdef CONFIG_ZSWAP
 /*
  * atomic_dec_if_positive - decrement by 1 if old value positive
  * @v: pointer of type atomic_t
@@ -111,7 +110,6 @@ static inline int atomic_dec_if_positive(atomic_t *v)
 	return dec;
 }
 #endif
-#endif /* CONFIG_ZSWAP */
 
 #ifndef CONFIG_ARCH_HAS_ATOMIC_OR
 static inline void atomic_or(int i, atomic_t *v)

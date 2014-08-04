@@ -43,8 +43,6 @@
 #include <linux/debugfs.h>
 #endif
 
-#include <trace/events/power.h>
-
 #include <mach/hardware.h>
 #include <asm/irq.h>
 
@@ -84,66 +82,44 @@ static int clk_null_enable(struct clk *clk, int enable)
 	return 0;
 }
 
-static int __clk_enable(struct clk *clk)
-{
-	if (IS_ERR(clk) || clk == NULL)
-		return -EINVAL;
-
-	__clk_enable(clk->parent);
-
-	if ((clk->usage++) == 0) {
-		trace_clock_enable(clk->name, 1, smp_processor_id());
-		(clk->enable)(clk, 1);
-	}
-
-	return 0;
-}
-
 int clk_enable(struct clk *clk)
 {
 	unsigned long flags;
-	int ret;
+
+	if (IS_ERR(clk) || clk == NULL)
+		return -EINVAL;
+
+	clk_enable(clk->parent);
 
 	spin_lock_irqsave(&clocks_lock, flags);
-	ret = __clk_enable(clk);
+
+	if ((clk->usage++) == 0)
+		(clk->enable)(clk, 1);
+
 	spin_unlock_irqrestore(&clocks_lock, flags);
-
-	return ret;
-}
-
-static void __clk_disable(struct clk *clk)
-{
-	if (IS_ERR(clk) || clk == NULL)
-		return;
-
-	if (WARN_ON(!clk->usage)) {
-		pr_err("%s: clock, %s : %s, already disabled\n", __func__,
-			clk->devname ? clk->devname : "", clk->name);
-		return;
-	}
-
-	if ((--clk->usage) == 0) {
-		trace_clock_disable(clk->name, 0, smp_processor_id());
-		(clk->enable)(clk, 0);
-	}
-
-	__clk_disable(clk->parent);
-
-	return;
+	return 0;
 }
 
 void clk_disable(struct clk *clk)
 {
 	unsigned long flags;
 
+	if (IS_ERR(clk) || clk == NULL)
+		return;
+
 	spin_lock_irqsave(&clocks_lock, flags);
-	__clk_disable(clk);
+
+	if ((--clk->usage) == 0)
+		(clk->enable)(clk, 0);
+
 	spin_unlock_irqrestore(&clocks_lock, flags);
+	clk_disable(clk->parent);
 }
+
 
 unsigned long clk_get_rate(struct clk *clk)
 {
-	if (IS_ERR(clk))
+	if (IS_ERR_OR_NULL(clk))
 		return 0;
 
 	if (clk->rate != 0)
@@ -160,7 +136,7 @@ unsigned long clk_get_rate(struct clk *clk)
 
 long clk_round_rate(struct clk *clk, unsigned long rate)
 {
-	if (!IS_ERR(clk) && clk->ops && clk->ops->round_rate)
+	if (!IS_ERR_OR_NULL(clk) && clk->ops && clk->ops->round_rate)
 		return (clk->ops->round_rate)(clk, rate);
 
 	return rate;
@@ -168,10 +144,10 @@ long clk_round_rate(struct clk *clk, unsigned long rate)
 
 int clk_set_rate(struct clk *clk, unsigned long rate)
 {
-	int ret;
 	unsigned long flags;
+	int ret;
 
-	if (IS_ERR(clk))
+	if (IS_ERR_OR_NULL(clk))
 		return -EINVAL;
 
 	/* We do not default just do a clk->rate = rate as
@@ -185,66 +161,29 @@ int clk_set_rate(struct clk *clk, unsigned long rate)
 		return -EINVAL;
 
 	spin_lock_irqsave(&clocks_lock, flags);
-	trace_clock_set_rate(clk->name, rate, smp_processor_id());
 	ret = (clk->ops->set_rate)(clk, rate);
 	spin_unlock_irqrestore(&clocks_lock, flags);
 
 	return ret;
 }
 
-struct clk *__clk_get_parent(struct clk *clk)
-{
-	if (clk->ops && clk->ops->get_parent)
-		return clk->ops->get_parent(clk);
-	else
-		return clk->parent;
-}
-
 struct clk *clk_get_parent(struct clk *clk)
 {
-	struct clk *ret;
-	unsigned long flags;
-
-	if (IS_ERR(clk))
-		return ERR_PTR(EINVAL);
-
-	spin_lock_irqsave(&clocks_lock, flags);
-
-	ret = __clk_get_parent(clk);
-
-	spin_unlock_irqrestore(&clocks_lock, flags);
-
-	return ret;
+	return clk->parent;
 }
 
 int clk_set_parent(struct clk *clk, struct clk *parent)
 {
-	int ret = 0;
 	unsigned long flags;
-	struct clk *old_parent;
-	int i;
+	int ret = 0;
 
-	if (IS_ERR(clk))
+	if (IS_ERR_OR_NULL(clk) || IS_ERR_OR_NULL(parent))
 		return -EINVAL;
-
-	old_parent = clk->parent;
 
 	spin_lock_irqsave(&clocks_lock, flags);
 
-	if (clk->usage) {
-		for (i = 0; i < clk->usage; i++)
-			__clk_enable(parent);
-	}
-
-	if (clk->ops && clk->ops->set_parent) {
-		trace_clock_set_parent(clk->name, parent->name);
+	if (clk->ops && clk->ops->set_parent)
 		ret = (clk->ops->set_parent)(clk, parent);
-	}
-
-	if (clk->usage) {
-		for (i = 0; i < clk->usage; i++)
-			__clk_disable(old_parent);
-	}
 
 	spin_unlock_irqrestore(&clocks_lock, flags);
 
@@ -343,18 +282,6 @@ int s3c24xx_register_clock(struct clk *clk)
 {
 	if (clk->enable == NULL)
 		clk->enable = clk_null_enable;
-
-	if (clk->init)
-		clk->init(clk);
-
-	/* add to the list of available clocks */
-
-	/* Quick check to see if this clock has already been registered. */
-	BUG_ON(clk->list.prev != clk->list.next);
-
-	spin_lock(&clocks_lock);
-	list_add(&clk->list, &clocks);
-	spin_unlock(&clocks_lock);
 
 	/* fill up the clk_lookup structure and register it*/
 	clk->lookup.dev_id = clk->devname;
@@ -478,9 +405,9 @@ static void clock_tree_show_one(struct seq_file *s, struct clk *c, int level)
 	state = (c->usage > 0) ? "on" : "off";
 
 	seq_printf(s, "%*s%-*s %-6s %-3d %-10lu\n",
-		level * 3 + 1, "",
-		50 - level * 3, buf,
-		state, c->usage, c->usage ? clk_get_rate(c) : 0);
+		   level * 3 + 1, "",
+		   50 - level * 3, buf,
+		   state, c->usage, clk_get_rate(c));
 
 	list_for_each_entry(child, &clocks, list) {
 		if (child->parent != c)
@@ -495,8 +422,8 @@ static int clock_tree_show(struct seq_file *s, void *data)
 	struct clk *c;
 	unsigned long flags;
 
-	seq_printf(s, " clock                                              state  ref rate\n");
-	seq_printf(s, "--------------------------------------------------------------------\n");
+	seq_printf(s, " clock state ref rate\n");
+	seq_printf(s, "----------------------------------------------------\n");
 
 	spin_lock_irqsave(&clocks_lock, flags);
 
@@ -523,10 +450,7 @@ static const struct file_operations clock_tree_fops = {
 static int clock_rate_show(void *data, u64 *val)
 {
 	struct clk *c = data;
-	unsigned long flags;
-	spin_lock_irqsave(&clocks_lock, flags);
 	*val = clk_get_rate(c);
-	spin_unlock_irqrestore(&clocks_lock, flags);
 	return 0;
 }
 DEFINE_SIMPLE_ATTRIBUTE(clock_rate_fops, clock_rate_show, NULL, "%llu\n");
@@ -539,11 +463,7 @@ static int clk_debugfs_register_one(struct clk *c)
 	char s[255];
 	char *p = s;
 
-	if (c->name)
-		p += sprintf(p, "%s", c->name);
-
-	if (c->devname)
-		p += sprintf(p, ":%s", c->devname);
+	p += sprintf(p, "%s", c->devname);
 
 	d = debugfs_create_dir(s, pa ? pa->dent : clk_debugfs_root);
 	if (!d)
@@ -600,7 +520,7 @@ static int __init clk_debugfs_init(void)
 	clk_debugfs_root = d;
 
 	d = debugfs_create_file("clock_tree", S_IRUGO, clk_debugfs_root, NULL,
-		&clock_tree_fops);
+				 &clock_tree_fops);
 	if (!d)
 		goto err_out;
 

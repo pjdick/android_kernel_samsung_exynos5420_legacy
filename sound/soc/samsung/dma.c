@@ -24,14 +24,11 @@
 #include <asm/dma.h>
 #include <mach/hardware.h>
 #include <mach/dma.h>
-#include <mach/map.h>
 
 #include "dma.h"
 
 #define ST_RUNNING		(1<<0)
 #define ST_OPENED		(1<<1)
-
-static atomic_t dram_usage_cnt;
 
 static const struct snd_pcm_hardware dma_hardware = {
 	.info			= SNDRV_PCM_INFO_INTERLEAVED |
@@ -40,15 +37,13 @@ static const struct snd_pcm_hardware dma_hardware = {
 				    SNDRV_PCM_INFO_MMAP_VALID,
 	.formats		= SNDRV_PCM_FMTBIT_S16_LE |
 				    SNDRV_PCM_FMTBIT_U16_LE |
-				    SNDRV_PCM_FMTBIT_S24_LE |
-				    SNDRV_PCM_FMTBIT_U24_LE |
 				    SNDRV_PCM_FMTBIT_U8 |
 				    SNDRV_PCM_FMTBIT_S8,
-	.channels_min		= 1,
-	.channels_max		= 6,
+	.channels_min		= 2,
+	.channels_max		= 2,
 	.buffer_bytes_max	= 128*1024,
-	.period_bytes_min	= 128,
-	.period_bytes_max	= 64*1024,
+	.period_bytes_min	= PAGE_SIZE,
+	.period_bytes_max	= PAGE_SIZE*2,
 	.periods_min		= 2,
 	.periods_max		= 128,
 	.fifo_size		= 32,
@@ -63,21 +58,9 @@ struct runtime_data {
 	dma_addr_t dma_pos;
 	dma_addr_t dma_end;
 	struct s3c_dma_params *params;
-	bool dram_used;
 };
 
 static void audio_buffdone(void *data);
-
-/* check_adma_status
- *
- * ADMA status is checked for AP Power mode.
- * return 1 : ADMA use dram area and it is running.
- * return 0 : ADMA has a fine condition to enter Low Power Mode.
- */
-int check_adma_status(void)
-{
-	return atomic_read(&dram_usage_cnt) ? 1 : 0;
-}
 
 /* dma_enqueue
  *
@@ -107,31 +90,25 @@ static void dma_enqueue(struct snd_pcm_substream *substream)
 	dma_info.period = prtd->dma_period;
 	dma_info.len = prtd->dma_period*limit;
 
-	if (samsung_dma_has_infiniteloop()) {
-		dma_info.buf = prtd->dma_pos;
-		dma_info.infiniteloop = limit;
-		prtd->params->ops->prepare(prtd->params->ch, &dma_info);
-	} else {
-		dma_info.infiniteloop = 0;
-		while (prtd->dma_loaded < limit) {
-			pr_debug("dma_loaded: %d\n", prtd->dma_loaded);
+	while (prtd->dma_loaded < limit) {
+		pr_debug("dma_loaded: %d\n", prtd->dma_loaded);
 
-			if ((pos + dma_info.period) > prtd->dma_end) {
-				dma_info.period  = prtd->dma_end - pos;
-				pr_debug("%s: corrected dma len %ld\n",
-						__func__, dma_info.period);
-			}
-
-			dma_info.buf = pos;
-			prtd->params->ops->prepare(prtd->params->ch, &dma_info);
-
-			prtd->dma_loaded++;
-			pos += prtd->dma_period;
-			if (pos >= prtd->dma_end)
-				pos = prtd->dma_start;
+		if ((pos + dma_info.period) > prtd->dma_end) {
+			dma_info.period  = prtd->dma_end - pos;
+			pr_debug("%s: corrected dma len %ld\n",
+					__func__, dma_info.period);
 		}
-		prtd->dma_pos = pos;
+
+		dma_info.buf = pos;
+		prtd->params->ops->prepare(prtd->params->ch, &dma_info);
+
+		prtd->dma_loaded++;
+		pos += prtd->dma_period;
+		if (pos >= prtd->dma_end)
+			pos = prtd->dma_start;
 	}
+
+	prtd->dma_pos = pos;
 }
 
 static void audio_buffdone(void *data)
@@ -141,20 +118,22 @@ static void audio_buffdone(void *data)
 
 	pr_debug("Entered %s\n", __func__);
 
-	snd_pcm_period_elapsed(substream);
+	if (prtd->state & ST_RUNNING) {
+		prtd->dma_pos += prtd->dma_period;
+		if (prtd->dma_pos >= prtd->dma_end)
+			prtd->dma_pos = prtd->dma_start;
 
-	if(prtd == NULL)
-		return;
+		if (substream)
+			snd_pcm_period_elapsed(substream);
 
-	if (!samsung_dma_has_circular()) {
 		spin_lock(&prtd->lock);
-		prtd->dma_loaded--;
-		if (!samsung_dma_has_infiniteloop())
+		if (!samsung_dma_has_circular()) {
+			prtd->dma_loaded--;
 			dma_enqueue(substream);
+		}
 		spin_unlock(&prtd->lock);
 	}
 }
-
 
 static int dma_hw_params(struct snd_pcm_substream *substream,
 	struct snd_pcm_hw_params *params)
@@ -193,10 +172,10 @@ static int dma_hw_params(struct snd_pcm_substream *substream,
 			(substream->stream == SNDRV_PCM_STREAM_PLAYBACK
 			? DMA_MEM_TO_DEV : DMA_DEV_TO_MEM);
 		config.width = prtd->params->dma_size;
-		config.maxburst = 1;
 		config.fifo = prtd->params->dma_addr;
 		prtd->params->ch = prtd->params->ops->request(
-				prtd->params->channel, &req);
+				prtd->params->channel, &req, rtd->cpu_dai->dev,
+				prtd->params->ch_name);
 		prtd->params->ops->config(prtd->params->ch, &config);
 	}
 
@@ -210,18 +189,6 @@ static int dma_hw_params(struct snd_pcm_substream *substream,
 	prtd->dma_start = runtime->dma_addr;
 	prtd->dma_pos = prtd->dma_start;
 	prtd->dma_end = prtd->dma_start + totbytes;
-
-	if (runtime->dma_addr > EXYNOS_PA_AUDSS)
-		prtd->dram_used = true;
-	else
-		prtd->dram_used = false;
-
-        pr_info("G:%s:DmaAddr=@%x Total=%d PrdSz=%d #Prds=%d dma_area=0x%x\n",
-		(substream->stream == SNDRV_PCM_STREAM_PLAYBACK) ? "P" : "C",
-		prtd->dma_start, runtime->dma_bytes,
-		params_period_bytes(params), params_periods(params),
-		(unsigned int)runtime->dma_area);
-
 	spin_unlock_irq(&prtd->lock);
 
 	return 0;
@@ -280,21 +247,13 @@ static int dma_trigger(struct snd_pcm_substream *substream, int cmd)
 
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
-	case SNDRV_PCM_TRIGGER_RESUME:
-	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
 		prtd->state |= ST_RUNNING;
 		prtd->params->ops->trigger(prtd->params->ch);
-		if (prtd->dram_used)
-			atomic_inc(&dram_usage_cnt);
 		break;
 
 	case SNDRV_PCM_TRIGGER_STOP:
-	case SNDRV_PCM_TRIGGER_SUSPEND:
-	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
-	        prtd->state &= ~ST_RUNNING;
+		prtd->state &= ~ST_RUNNING;
 		prtd->params->ops->stop(prtd->params->ch);
-		if (prtd->dram_used)
-			atomic_dec(&dram_usage_cnt);
 		break;
 
 	default:
@@ -313,16 +272,10 @@ dma_pointer(struct snd_pcm_substream *substream)
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct runtime_data *prtd = runtime->private_data;
 	unsigned long res;
-	dma_addr_t src, dst;
 
 	pr_debug("Entered %s\n", __func__);
 
-	prtd->params->ops->getposition(prtd->params->ch, &src, &dst);
-
-	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE)
-		res = dst - prtd->dma_start;
-	else
-		res = src - prtd->dma_start;
+	res = prtd->dma_pos - prtd->dma_start;
 
 	pr_debug("Pointer offset: %lu\n", res);
 
@@ -480,32 +433,18 @@ static struct snd_soc_platform_driver samsung_asoc_platform = {
 	.pcm_free	= dma_free_dma_buffers,
 };
 
-static int __devinit samsung_asoc_platform_probe(struct platform_device *pdev)
+int asoc_dma_platform_register(struct device *dev)
 {
-	atomic_set(&dram_usage_cnt, 0);
-
-	return snd_soc_register_platform(&pdev->dev, &samsung_asoc_platform);
+	return snd_soc_register_platform(dev, &samsung_asoc_platform);
 }
+EXPORT_SYMBOL_GPL(asoc_dma_platform_register);
 
-static int __devexit samsung_asoc_platform_remove(struct platform_device *pdev)
+void asoc_dma_platform_unregister(struct device *dev)
 {
-	snd_soc_unregister_platform(&pdev->dev);
-	return 0;
+	snd_soc_unregister_platform(dev);
 }
-
-static struct platform_driver asoc_dma_driver = {
-	.driver = {
-		.name = "samsung-audio",
-		.owner = THIS_MODULE,
-	},
-
-	.probe = samsung_asoc_platform_probe,
-	.remove = __devexit_p(samsung_asoc_platform_remove),
-};
-
-module_platform_driver(asoc_dma_driver);
+EXPORT_SYMBOL_GPL(asoc_dma_platform_unregister);
 
 MODULE_AUTHOR("Ben Dooks, <ben@simtec.co.uk>");
 MODULE_DESCRIPTION("Samsung ASoC DMA Driver");
 MODULE_LICENSE("GPL");
-MODULE_ALIAS("platform:samsung-audio");

@@ -8,16 +8,22 @@
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
+ *
+ * Derived from leds-lp5521.c, leds-lp5523.c
  */
 
+#include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/firmware.h>
 #include <linux/i2c.h>
 #include <linux/leds.h>
 #include <linux/module.h>
-#include <linux/leds-lp55xx.h>
+#include <linux/platform_data/leds-lp55xx.h>
 
 #include "leds-lp55xx-common.h"
+
+/* External clock rate */
+#define LP55XX_CLK_32K			32768
 
 static struct lp55xx_led *cdev_to_lp55xx_led(struct led_classdev *cdev)
 {
@@ -72,16 +78,16 @@ static int lp55xx_post_init_device(struct lp55xx_chip *chip)
 	return cfg->post_init_device(chip);
 }
 
-static ssize_t show_current(struct device *dev,
+static ssize_t lp55xx_show_current(struct device *dev,
 			    struct device_attribute *attr,
 			    char *buf)
 {
 	struct lp55xx_led *led = dev_to_lp55xx_led(dev);
 
-	return sprintf(buf, "%d\n", led->led_current);
+	return scnprintf(buf, PAGE_SIZE, "%d\n", led->led_current);
 }
 
-static ssize_t store_current(struct device *dev,
+static ssize_t lp55xx_store_current(struct device *dev,
 			     struct device_attribute *attr,
 			     const char *buf, size_t len)
 {
@@ -105,17 +111,18 @@ static ssize_t store_current(struct device *dev,
 	return len;
 }
 
-static ssize_t show_max_current(struct device *dev,
+static ssize_t lp55xx_show_max_current(struct device *dev,
 			    struct device_attribute *attr,
 			    char *buf)
 {
 	struct lp55xx_led *led = dev_to_lp55xx_led(dev);
 
-	return sprintf(buf, "%d\n", led->max_current);
+	return scnprintf(buf, PAGE_SIZE, "%d\n", led->max_current);
 }
 
-static DEVICE_ATTR(led_current, S_IRUGO | S_IWUSR, show_current, store_current);
-static DEVICE_ATTR(max_current, S_IRUGO , show_max_current, NULL);
+static DEVICE_ATTR(led_current, S_IRUGO | S_IWUSR, lp55xx_show_current,
+		lp55xx_store_current);
+static DEVICE_ATTR(max_current, S_IRUGO , lp55xx_show_max_current, NULL);
 
 static struct attribute *lp55xx_led_attributes[] = {
 	&dev_attr_led_current.attr,
@@ -228,7 +235,7 @@ static int lp55xx_request_firmware(struct lp55xx_chip *chip)
 				GFP_KERNEL, chip, lp55xx_firmware_loaded);
 }
 
-static ssize_t show_engine_select(struct device *dev,
+static ssize_t lp55xx_show_engine_select(struct device *dev,
 			    struct device_attribute *attr,
 			    char *buf)
 {
@@ -238,7 +245,7 @@ static ssize_t show_engine_select(struct device *dev,
 	return sprintf(buf, "%d\n", chip->engine_idx);
 }
 
-static ssize_t store_engine_select(struct device *dev,
+static ssize_t lp55xx_store_engine_select(struct device *dev,
 			     struct device_attribute *attr,
 			     const char *buf, size_t len)
 {
@@ -280,7 +287,7 @@ static inline void lp55xx_run_engine(struct lp55xx_chip *chip, bool start)
 		chip->cfg->run_engine(chip, start);
 }
 
-static ssize_t store_engine_run(struct device *dev,
+static ssize_t lp55xx_store_engine_run(struct device *dev,
 			     struct device_attribute *attr,
 			     const char *buf, size_t len)
 {
@@ -306,17 +313,17 @@ static ssize_t store_engine_run(struct device *dev,
 }
 
 static DEVICE_ATTR(select_engine, S_IRUGO | S_IWUSR,
-		   show_engine_select, store_engine_select);
-static DEVICE_ATTR(run_engine, S_IWUSR, NULL, store_engine_run);
+		   lp55xx_show_engine_select, lp55xx_store_engine_select);
+static DEVICE_ATTR(run_engine, S_IWUSR, NULL, lp55xx_store_engine_run);
 
-static struct attribute *lp55xx_dev_attributes[] = {
+static struct attribute *lp55xx_engine_attributes[] = {
 	&dev_attr_select_engine.attr,
 	&dev_attr_run_engine.attr,
 	NULL,
 };
 
-static const struct attribute_group lp55xx_dev_attr_group = {
-	.attrs = lp55xx_dev_attributes,
+static const struct attribute_group lp55xx_engine_attr_group = {
+	.attrs = lp55xx_engine_attributes,
 };
 
 int lp55xx_write(struct lp55xx_chip *chip, u8 reg, u8 val)
@@ -354,12 +361,41 @@ int lp55xx_update_bits(struct lp55xx_chip *chip, u8 reg, u8 mask, u8 val)
 }
 EXPORT_SYMBOL_GPL(lp55xx_update_bits);
 
+bool lp55xx_is_extclk_used(struct lp55xx_chip *chip)
+{
+	struct clk *clk;
+	int err;
+
+	clk = devm_clk_get(&chip->cl->dev, "32k_clk");
+	if (IS_ERR(clk))
+		goto use_internal_clk;
+
+	err = clk_prepare_enable(clk);
+	if (err)
+		goto use_internal_clk;
+
+	if (clk_get_rate(clk) != LP55XX_CLK_32K) {
+		clk_disable_unprepare(clk);
+		goto use_internal_clk;
+	}
+
+	dev_info(&chip->cl->dev, "%dHz external clock used\n",	LP55XX_CLK_32K);
+
+	chip->clk = clk;
+	return true;
+
+use_internal_clk:
+	dev_info(&chip->cl->dev, "internal clock used\n");
+	return false;
+}
+EXPORT_SYMBOL_GPL(lp55xx_is_extclk_used);
+
 int lp55xx_init_device(struct lp55xx_chip *chip)
 {
 	struct lp55xx_platform_data *pdata;
 	struct lp55xx_device_config *cfg;
 	struct device *dev = &chip->cl->dev;
-	int ret;
+	int ret = 0;
 
 	WARN_ON(!chip);
 
@@ -417,6 +453,9 @@ EXPORT_SYMBOL_GPL(lp55xx_init_device);
 void lp55xx_deinit_device(struct lp55xx_chip *chip)
 {
 	struct lp55xx_platform_data *pdata = chip->pdata;
+
+	if (chip->clk)
+		clk_disable_unprepare(chip->clk);
 
 	if (pdata->enable)
 		pdata->enable(0);
@@ -491,14 +530,13 @@ int lp55xx_register_sysfs(struct lp55xx_chip *chip)
 	int ret;
 
 	if (!cfg->run_engine || !cfg->firmware_cb)
-		goto dev_attr_group;
+		goto dev_specific_attrs;
 
-	/* add common attributes and device specific attribute(s) */
-	ret = sysfs_create_group(&dev->kobj, &lp55xx_dev_attr_group);
+	ret = sysfs_create_group(&dev->kobj, &lp55xx_engine_attr_group);
 	if (ret)
 		return ret;
 
-dev_attr_group:
+dev_specific_attrs:
 	return cfg->dev_attr_group ?
 		sysfs_create_group(&dev->kobj, cfg->dev_attr_group) : 0;
 }
@@ -512,6 +550,10 @@ void lp55xx_unregister_sysfs(struct lp55xx_chip *chip)
 	if (cfg->dev_attr_group)
 		sysfs_remove_group(&dev->kobj, cfg->dev_attr_group);
 
-	sysfs_remove_group(&dev->kobj, &lp55xx_dev_attr_group);
+	sysfs_remove_group(&dev->kobj, &lp55xx_engine_attr_group);
 }
 EXPORT_SYMBOL_GPL(lp55xx_unregister_sysfs);
+
+MODULE_AUTHOR("Milo Kim <milo.kim@ti.com>");
+MODULE_DESCRIPTION("LP55xx Common Driver");
+MODULE_LICENSE("GPL");

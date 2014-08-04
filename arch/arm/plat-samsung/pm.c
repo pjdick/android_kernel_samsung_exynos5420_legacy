@@ -16,6 +16,7 @@
 #include <linux/suspend.h>
 #include <linux/errno.h>
 #include <linux/delay.h>
+#include <linux/of.h>
 #include <linux/serial_core.h>
 #include <linux/io.h>
 
@@ -27,14 +28,12 @@
 #include <plat/regs-serial.h>
 #include <mach/regs-clock.h>
 #include <mach/regs-irq.h>
+#include <mach/irqs.h>
 #include <asm/irq.h>
 
 #include <plat/pm.h>
 #include <mach/pm-core.h>
 
-#ifdef CONFIG_FAST_BOOT
-#include <linux/fake_shut_down.h>
-#endif
 /* for external use */
 
 unsigned long s3c_pm_flags;
@@ -54,7 +53,7 @@ void s3c_pm_dbg(const char *fmt, ...)
 	char buff[256];
 
 	va_start(va, fmt);
-	vsprintf(buff, fmt, va);
+	vsnprintf(buff, sizeof(buff), fmt, va);
 	va_end(va);
 
 	printascii(buff);
@@ -77,7 +76,7 @@ unsigned char pm_uart_udivslot;
 
 #ifdef CONFIG_SAMSUNG_PM_DEBUG
 
-struct pm_uart_save uart_save[CONFIG_SERIAL_SAMSUNG_UARTS];
+static struct pm_uart_save uart_save[CONFIG_SERIAL_SAMSUNG_UARTS];
 
 static void s3c_pm_save_uart(unsigned int uart, struct pm_uart_save *save)
 {
@@ -246,6 +245,7 @@ int (*pm_cpu_sleep)(unsigned long);
 
 static int s3c_pm_enter(suspend_state_t state)
 {
+	int ret;
 	/* ensure the debug is initialised (if enabled) */
 
 	s3c_pm_debug_init();
@@ -262,7 +262,8 @@ static int s3c_pm_enter(suspend_state_t state)
 	 * require a full power-cycle)
 	*/
 
-	if (!any_allowed(s3c_irqwake_intmask, s3c_irqwake_intallow) &&
+	if (!of_have_populated_dt() &&
+	    !any_allowed(s3c_irqwake_intmask, s3c_irqwake_intallow) &&
 	    !any_allowed(s3c_irqwake_eintmask, s3c_irqwake_eintallow)) {
 		printk(KERN_ERR "%s: No wake-up sources!\n", __func__);
 		printk(KERN_ERR "%s: Aborting sleep\n", __func__);
@@ -271,8 +272,11 @@ static int s3c_pm_enter(suspend_state_t state)
 
 	/* save all necessary core registers not covered by the drivers */
 
-	samsung_pm_save_gpios();
-	samsung_pm_saved_gpios();
+	if (!of_have_populated_dt()) {
+		samsung_pm_save_gpios();
+		samsung_pm_saved_gpios();
+	}
+
 	s3c_pm_save_uarts();
 	s3c_pm_save_core();
 
@@ -285,20 +289,13 @@ static int s3c_pm_enter(suspend_state_t state)
 
 	s3c_pm_arch_prepare_irqs();
 
-#ifdef CONFIG_FAST_BOOT
-	if (fake_shut_down) {
-		/* Masking external wake up source
-		 * only enable  power key, FUEL ALERT, IF PMIC IRQ */
-		__raw_writel(0xfffbcfff, EXYNOS_EINT_WAKEUP_MASK);
-		printk(KERN_ALERT"EINT_MASK[ 0x%08x ]\n",
-				__raw_readl(EXYNOS_EINT_WAKEUP_MASK));
-		/* disable all system int */
-		__raw_writel(0xffffffff, EXYNOS_WAKEUP_MASK);
-	}
-#endif
 	/* call cpu specific preparation */
 
 	pm_cpu_prep();
+
+	/* flush cache back to ram */
+
+	flush_cache_all();
 
 	s3c_pm_check_store();
 
@@ -306,25 +303,23 @@ static int s3c_pm_enter(suspend_state_t state)
 
 	s3c_pm_arch_stop_clocks();
 
-#ifdef CONFIG_SEC_PM
-	pr_info("PM: SLEEP\n");
-#endif
 	/* this will also act as our return point from when
 	 * we resume as it saves its own register state and restores it
 	 * during the resume.  */
 
-	cpu_suspend(0, pm_cpu_sleep);
+	ret = cpu_suspend(0, pm_cpu_sleep);
+	if (ret)
+		return ret;
 
-#ifdef CONFIG_FAST_BOOT
-	if (fake_shut_down)
-		s3c_pm_arch_prepare_irqs();
-#endif
 	/* restore the system state */
 
 	s3c_pm_restore_core();
 	s3c_pm_restore_uarts();
-	samsung_pm_restore_gpios();
-	s3c_pm_restored_gpios();
+
+	if (!of_have_populated_dt()) {
+		samsung_pm_restore_gpios();
+		s3c_pm_restored_gpios();
+	}
 
 	s3c_pm_debug_init();
 

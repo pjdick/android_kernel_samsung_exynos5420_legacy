@@ -9,11 +9,11 @@
  * modify it under the terms of the GNU General Public License
  * version 2 as published by the Free Software Foundation.
  *
- * Derived from leds-lp5521.h, leds-lp5523.h
+ * Derived from leds-lp5521.c, leds-lp5523.c
  */
 
-#ifndef __LINUX_LP55XX_COMMON_H
-#define __LINUX_LP55XX_COMMON_H
+#ifndef _LEDS_LP55XX_COMMON_H
+#define _LEDS_LP55XX_COMMON_H
 
 enum lp55xx_engine_index {
 	LP55XX_ENGINE_INVALID,
@@ -37,36 +37,35 @@ struct lp55xx_reg {
 
 /*
  * struct lp55xx_device_config
- * @max_channel        : Maximum number of channels
  * @reset              : Chip specific reset command
  * @enable             : Chip specific enable command
+ * @max_channel        : Maximum number of channels
  * @post_init_device   : Chip specific initialization code
- * @set_led_current    : Current setting operation
  * @brightness_work_fn : Brightness work function
- * @run_engine         : Run internal engine for pattern
+ * @set_led_current    : LED current set function
  * @firmware_cb        : Call function when the firmware is loaded
+ * @run_engine         : Run internal engine for pattern
  * @dev_attr_group     : Device specific attributes
  */
 struct lp55xx_device_config {
-	const int max_channel;
-
 	const struct lp55xx_reg reset;
 	const struct lp55xx_reg enable;
+	const int max_channel;
 
 	/* define if the device has specific initialization process */
 	int (*post_init_device) (struct lp55xx_chip *chip);
 
-	/* current setting function */
-	void (*set_led_current) (struct lp55xx_led *led, u8 led_current);
-
 	/* access brightness register */
 	void (*brightness_work_fn)(struct work_struct *work);
 
-	/* used for running firmware LED patterns */
-	void (*run_engine) (struct lp55xx_chip *chip, bool start);
+	/* current setting function */
+	void (*set_led_current) (struct lp55xx_led *led, u8 led_current);
 
 	/* access program memory when the firmware is loaded */
 	void (*firmware_cb)(struct lp55xx_chip *chip);
+
+	/* used for running firmware LED patterns */
+	void (*run_engine) (struct lp55xx_chip *chip, bool start);
 
 	/* additional device specific attributes */
 	const struct attribute_group *dev_attr_group;
@@ -77,17 +76,18 @@ struct lp55xx_device_config {
  * @cl         : I2C communication for access registers
  * @pdata      : Platform specific data
  * @lock       : Lock for user-space interface
- * @cfg        : Device specific configuration data
  * @num_leds   : Number of registered LEDs
+ * @cfg        : Device specific configuration data
  * @engine_idx : Selected engine number
  * @fw         : Firmware data for running a LED pattern
  */
 struct lp55xx_chip {
 	struct i2c_client *cl;
+	struct clk *clk;
 	struct lp55xx_platform_data *pdata;
 	struct mutex lock;	/* lock for user-space interface */
-	struct lp55xx_device_config *cfg;
 	int num_leds;
+	struct lp55xx_device_config *cfg;
 	enum lp55xx_engine_index engine_idx;
 	const struct firmware *fw;
 };
@@ -118,6 +118,9 @@ extern int lp55xx_read(struct lp55xx_chip *chip, u8 reg, u8 *val);
 extern int lp55xx_update_bits(struct lp55xx_chip *chip, u8 reg,
 			u8 mask, u8 val);
 
+/* external clock detection */
+extern bool lp55xx_is_extclk_used(struct lp55xx_chip *chip);
+
 /* common device init/deinit functions */
 extern int lp55xx_init_device(struct lp55xx_chip *chip);
 extern void lp55xx_deinit_device(struct lp55xx_chip *chip);
@@ -132,4 +135,4 @@ extern void lp55xx_unregister_leds(struct lp55xx_led *led,
 extern int lp55xx_register_sysfs(struct lp55xx_chip *chip);
 extern void lp55xx_unregister_sysfs(struct lp55xx_chip *chip);
 
-#endif /* __LINUX_LP55XX_COMMON_H */
+#endif /* _LEDS_LP55XX_COMMON_H */

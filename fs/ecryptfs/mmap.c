@@ -66,35 +66,6 @@ static int ecryptfs_writepage(struct page *page, struct writeback_control *wbc)
 {
 	int rc;
 
-    // WTL_EDM_START
-    /* MDM 3.1 START */
-    struct inode *inode;
-    struct ecryptfs_crypt_stat *crypt_stat;
-
-    inode = page->mapping->host;
-    crypt_stat = &ecryptfs_inode_to_private(inode)->crypt_stat;
-    if (!(crypt_stat->flags & ECRYPTFS_ENCRYPTED)) {
-	    size_t size;
-	    loff_t file_size = i_size_read(inode);
-	    pgoff_t end_page_index = file_size >> PAGE_CACHE_SHIFT;
-		if (end_page_index < page->index)
-			size = 0;
-		else if (end_page_index == page->index)
-			size = file_size & ~PAGE_CACHE_MASK;
-		else
-			size = PAGE_CACHE_SIZE;
-
-		rc = ecryptfs_write_lower_page_segment(inode, page, 0, size);
-		if (unlikely(rc)) {
-			ecryptfs_printk(KERN_WARNING, "Error write ""page (upper index [0x%.16lx])\n", page->index);
-			ClearPageUptodate(page);
-		} else
-			SetPageUptodate(page);
-		goto out;
-    }
-    /* MDM 3.1 END */
-    // WTL_EDM_END
-
 	rc = ecryptfs_encrypt_page(page);
 	if (rc) {
 		ecryptfs_printk(KERN_WARNING, "Error encrypting "
@@ -367,7 +338,8 @@ static int ecryptfs_write_begin(struct file *file,
 			if (prev_page_end_size
 			    >= i_size_read(page->mapping->host)) {
 				zero_user(page, 0, PAGE_CACHE_SIZE);
-			} else {
+				SetPageUptodate(page);
+			} else if (len < PAGE_CACHE_SIZE) {
 				rc = ecryptfs_decrypt_page(page);
 				if (rc) {
 					printk(KERN_ERR "%s: Error decrypting "
@@ -377,8 +349,8 @@ static int ecryptfs_write_begin(struct file *file,
 					ClearPageUptodate(page);
 					goto out;
 				}
+				SetPageUptodate(page);
 			}
-			SetPageUptodate(page);
 		}
 	}
 	/* If creating a page or more of holes, zero them out via truncate.
@@ -527,6 +499,13 @@ static int ecryptfs_write_end(struct file *file,
 				ecryptfs_inode_to_lower(ecryptfs_inode));
 		}
 		goto out;
+	}
+	if (!PageUptodate(page)) {
+		if (copied < PAGE_CACHE_SIZE) {
+			rc = 0;
+			goto out;
+		}
+		SetPageUptodate(page);
 	}
 	/* Fills in zeros if 'to' goes beyond inode size */
 	rc = fill_zeros_to_end_of_page(page, to);

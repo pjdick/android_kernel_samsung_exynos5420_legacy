@@ -41,12 +41,7 @@ static int set_audio_clock_heirachy(struct platform_device *pdev)
 		goto out1;
 	}
 
-#ifdef CONFIG_SOC_EXYNOS5420
-	sclk_audio0 = clk_get(&pdev->dev, "dout_audio0");
-#else
 	sclk_audio0 = clk_get(&pdev->dev, "sclk_audio");
-#endif
-
 	if (IS_ERR(sclk_audio0)) {
 		printk(KERN_WARNING "%s: Cannot find sclk_audio.\n",
 				__func__);
@@ -85,7 +80,7 @@ out1:
 static int set_audio_clock_rate(unsigned long epll_rate,
 				unsigned long audio_rate)
 {
-	struct clk *fout_epll, *clk;
+	struct clk *fout_epll, *sclk_spdif;
 
 	fout_epll = clk_get(NULL, "fout_epll");
 	if (IS_ERR(fout_epll)) {
@@ -96,18 +91,14 @@ static int set_audio_clock_rate(unsigned long epll_rate,
 	clk_set_rate(fout_epll, epll_rate);
 	clk_put(fout_epll);
 
-#ifdef CONFIG_SOC_EXYNOS5420
-	clk = clk_get(NULL, "dout_audio0");
-#else
-	clk = clk_get(NULL, "sclk_spdif");
-#endif
-	if (IS_ERR(clk)) {
-		printk(KERN_ERR "%s: failed to get target clk\n", __func__);
+	sclk_spdif = clk_get(NULL, "sclk_spdif");
+	if (IS_ERR(sclk_spdif)) {
+		printk(KERN_ERR "%s: failed to get sclk_spdif\n", __func__);
 		return -ENOENT;
 	}
 
-	clk_set_rate(clk, audio_rate);
-	clk_put(clk);
+	clk_set_rate(sclk_spdif, audio_rate);
+	clk_put(sclk_spdif);
 
 	return 0;
 }
@@ -160,7 +151,7 @@ static struct snd_soc_ops smdk_spdif_ops = {
 static struct snd_soc_dai_link smdk_dai = {
 	.name = "S/PDIF",
 	.stream_name = "S/PDIF PCM Playback",
-	.platform_name = "samsung-audio",
+	.platform_name = "samsung-spdif",
 	.cpu_dai_name = "samsung-spdif",
 	.codec_dai_name = "dit-hifi",
 	.codec_name = "spdif-dit",

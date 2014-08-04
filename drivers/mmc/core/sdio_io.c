@@ -188,7 +188,7 @@ EXPORT_SYMBOL_GPL(sdio_set_block_size);
  */
 static inline unsigned int sdio_max_byte_size(struct sdio_func *func)
 {
-	unsigned mval = func->card->host->max_blk_size;
+	unsigned mval =	func->card->host->max_blk_size;
 
 	if (mmc_blksz_for_byte_mode(func->card))
 		mval = min(mval, func->cur_blksize);

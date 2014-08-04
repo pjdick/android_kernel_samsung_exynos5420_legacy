@@ -18,7 +18,6 @@
 #include <linux/clk.h>
 #include <linux/err.h>
 #include <linux/io.h>
-#include <linux/spinlock.h>
 
 #include <mach/hardware.h>
 #include <mach/map.h>
@@ -75,7 +74,6 @@
 */
 
 static struct clk clk_timer_scaler[];
-static spinlock_t pwm_clock_spinlock;
 
 static unsigned long clk_pwm_scaler_get_rate(struct clk *clk)
 {
@@ -115,7 +113,7 @@ static int clk_pwm_scaler_set_rate(struct clk *clk, unsigned long rate)
 	divisor = clk_get_rate(clk->parent) / round;
 	divisor--;
 
-	spin_lock_irqsave(&pwm_clock_spinlock, flags);
+	local_irq_save(flags);
 	tcfg0 = __raw_readl(S3C2410_TCFG0);
 
 	if (clk == &clk_timer_scaler[1]) {
@@ -127,7 +125,7 @@ static int clk_pwm_scaler_set_rate(struct clk *clk, unsigned long rate)
 	}
 
 	__raw_writel(tcfg0, S3C2410_TCFG0);
-	spin_unlock_irqrestore(&pwm_clock_spinlock, flags);
+	local_irq_restore(flags);
 
 	return 0;
 }
@@ -216,24 +214,21 @@ static unsigned long clk_pwm_tdiv_bits(struct pwm_tdiv_clk *divclk)
 	return pwm_tdiv_div_bits(divclk->divisor);
 }
 
-static void clk_pwm_tdiv_update(struct pwm_tdiv_clk *divclk, unsigned long div)
+static void clk_pwm_tdiv_update(struct pwm_tdiv_clk *divclk)
 {
-	unsigned long tcfg1;
-	unsigned long bits;
+	unsigned long tcfg1 = __raw_readl(S3C2410_TCFG1);
+	unsigned long bits = clk_pwm_tdiv_bits(divclk);
 	unsigned long flags;
 	unsigned long shift =  S3C2410_TCFG1_SHIFT(divclk->clk.id);
 
-	spin_lock_irqsave(&pwm_clock_spinlock, flags);
-
-	divclk->divisor = div;
-	bits = clk_pwm_tdiv_bits(divclk);
+	local_irq_save(flags);
 
 	tcfg1 = __raw_readl(S3C2410_TCFG1);
 	tcfg1 &= ~(S3C2410_TCFG1_MUX_MASK << shift);
 	tcfg1 |= bits << shift;
 	__raw_writel(tcfg1, S3C2410_TCFG1);
 
-	spin_unlock_irqrestore(&pwm_clock_spinlock, flags);
+	local_irq_restore(flags);
 }
 
 static int clk_pwm_tdiv_set_rate(struct clk *clk, unsigned long rate)
@@ -252,11 +247,13 @@ static int clk_pwm_tdiv_set_rate(struct clk *clk, unsigned long rate)
 	if (divisor > 16)
 		return -EINVAL;
 
+	divclk->divisor = divisor;
+
 	/* Update the current MUX settings if we are currently
 	 * selected as the clock source for this clock. */
 
 	if (!pwm_cfg_src_is_tclk(tcfg1))
-		clk_pwm_tdiv_update(divclk, divisor);
+		clk_pwm_tdiv_update(divclk);
 
 	return 0;
 }
@@ -358,15 +355,15 @@ static int clk_pwm_tin_set_parent(struct clk *clk, struct clk *parent)
 	else
 		return -EINVAL;
 
-	spin_lock_irqsave(&pwm_clock_spinlock, flags);
-
 	clk->parent = parent;
+
+	local_irq_save(flags);
 
 	tcfg1 = __raw_readl(S3C2410_TCFG1);
 	tcfg1 &= ~(S3C2410_TCFG1_MUX_MASK << shift);
 	__raw_writel(tcfg1 | bits, S3C2410_TCFG1);
 
-	spin_unlock_irqrestore(&pwm_clock_spinlock, flags);
+	local_irq_restore(flags);
 
 	return 0;
 }
@@ -445,8 +442,6 @@ __init void s3c_pwmclk_init(void)
 	struct clk *clk_timers;
 	unsigned int clk;
 	int ret;
-
-	spin_lock_init(&pwm_clock_spinlock);
 
 	clk_timers = clk_get(NULL, "timers");
 	if (IS_ERR(clk_timers)) {

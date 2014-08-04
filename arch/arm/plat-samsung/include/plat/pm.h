@@ -109,16 +109,10 @@ extern void s3c_pm_do_restore_core(struct sleep_save *ptr, int count);
 #ifdef CONFIG_PM
 extern int s3c_irq_wake(struct irq_data *data, unsigned int state);
 extern int s3c_irqext_wake(struct irq_data *data, unsigned int state);
-extern int s3c24xx_irq_suspend(void);
-extern void s3c24xx_irq_resume(void);
 #else
 #define s3c_irq_wake NULL
 #define s3c_irqext_wake NULL
-#define s3c24xx_irq_suspend NULL
-#define s3c24xx_irq_resume  NULL
 #endif
-
-extern struct syscore_ops s3c24xx_irq_syscore_ops;
 
 /* PM debug functions */
 
@@ -135,7 +129,7 @@ extern void s3c_pm_dbg(const char *msg, ...);
 
 #define S3C_PMDBG(fmt...) s3c_pm_dbg(fmt)
 #else
-#define S3C_PMDBG(fmt...) pr_debug(fmt)
+#define S3C_PMDBG(fmt...) printk(KERN_DEBUG fmt)
 #endif
 
 #ifdef CONFIG_S3C_PM_DEBUG_LED_SMDK

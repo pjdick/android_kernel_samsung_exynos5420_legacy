@@ -1,9 +1,8 @@
 #ifndef _LINUX_STDDEF_H
 #define _LINUX_STDDEF_H
 
-#include <linux/compiler.h>
+#include <uapi/linux/stddef.h>
 
-#ifdef __KERNEL__
 
 #undef NULL
 #define NULL ((void *)0)
@@ -13,12 +12,13 @@ enum {
 	true	= 1
 };
 
+typedef unsigned short		__kernel_nlink_t;
+#define __kernel_nlink_t __kernel_nlink_t
+
 #undef offsetof
 #ifdef __compiler_offsetof
 #define offsetof(TYPE,MEMBER) __compiler_offsetof(TYPE,MEMBER)
 #else
 #define offsetof(TYPE, MEMBER) ((size_t) &((TYPE *)0)->MEMBER)
 #endif
-#endif /* __KERNEL__ */
-
 #endif

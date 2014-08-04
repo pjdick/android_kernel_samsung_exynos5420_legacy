@@ -1,5 +1,4 @@
-/*
- * s5m8767.h
+/*  s5m8767.h
  *
  * Copyright (c) 2011 Samsung Electronics Co., Ltd
  *              http://www.samsung.com
@@ -183,5 +182,7 @@ enum s5m8767_regulators {
 
 	S5M8767_REG_MAX,
 };
+
+#define S5M8767_ENCTRL_SHIFT  6
 
 #endif /* __LINUX_MFD_S5M8767_H */

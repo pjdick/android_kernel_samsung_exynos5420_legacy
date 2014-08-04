@@ -32,10 +32,6 @@
 #include "w1_netlink.h"
 #include "w1_int.h"
 
-#if defined(CONFIG_SEC_FACTORY)
-#define CONFIG_W1_KTHREAD
-#endif
-
 static int w1_search_count = -1; /* Default is continual scan */
 module_param_named(search_count, w1_search_count, int, 0);
 
@@ -80,6 +76,7 @@ static struct w1_master * w1_alloc_dev(u32 id, int slave_count, int slave_ttl,
 
 	INIT_LIST_HEAD(&dev->slist);
 	mutex_init(&dev->mutex);
+	mutex_init(&dev->bus_mutex);
 
 	memcpy(&dev->dev, device, sizeof(struct device));
 	dev_set_name(&dev->dev, "w1_bus_master%u", dev->id);
@@ -121,7 +118,7 @@ int w1_add_master_device(struct w1_bus_master *master)
 		return(-EINVAL);
         }
 	/* While it would be electrically possible to make a device that
-	 * generated a strong pullup in bit bang mode, only hardare that
+	 * generated a strong pullup in bit bang mode, only hardware that
 	 * controls 1-wire time frames are even expected to support a strong
 	 * pullup.  w1_io.c would need to support calling set_pullup before
 	 * the last write_bit operation of a w1_write_8 which it currently
@@ -165,8 +162,6 @@ int w1_add_master_device(struct w1_bus_master *master)
 
 	dev->initialized = 1;
 
-#ifdef CONFIG_W1_KTHREAD
-	printk(KERN_INFO "%s : W1 kthread will start\n", __func__);
 	dev->thread = kthread_run(&w1_process, dev, "%s", dev->name);
 	if (IS_ERR(dev->thread)) {
 		retval = PTR_ERR(dev->thread);
@@ -177,7 +172,6 @@ int w1_add_master_device(struct w1_bus_master *master)
 		goto err_out_rm_attr;
 	}
 
-#endif
 	list_add(&dev->w1_master_entry, &w1_masters);
 	mutex_unlock(&w1_mlock);
 

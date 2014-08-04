@@ -57,13 +57,10 @@ static void pixcir_ts_poscheck(struct pixcir_i2c_ts_data *data)
 
 	touch = rdbuf[0];
 	if (touch) {
-		u16 posx1 = (rdbuf[5] << 8) | rdbuf[4];
-		u16 posy1 = (rdbuf[3] << 8) | rdbuf[2];
-		u16 posx2 = (rdbuf[9] << 8) | rdbuf[8];
-		u16 posy2 = (rdbuf[7] << 8) | rdbuf[6];
-
-		posx1 = tsdata->chip->x_max - posx1;
-		posx2 = tsdata->chip->x_max - posx2;
+		u16 posx1 = (rdbuf[3] << 8) | rdbuf[2];
+		u16 posy1 = (rdbuf[5] << 8) | rdbuf[4];
+		u16 posx2 = (rdbuf[7] << 8) | rdbuf[6];
+		u16 posy2 = (rdbuf[9] << 8) | rdbuf[8];
 
 		input_report_key(tsdata->input, BTN_TOUCH, 1);
 		input_report_abs(tsdata->input, ABS_X, posx1);
@@ -128,7 +125,7 @@ static int pixcir_i2c_ts_resume(struct device *dev)
 static SIMPLE_DEV_PM_OPS(pixcir_dev_pm_ops,
 			 pixcir_i2c_ts_suspend, pixcir_i2c_ts_resume);
 
-static int __devinit pixcir_i2c_ts_probe(struct i2c_client *client,
+static int pixcir_i2c_ts_probe(struct i2c_client *client,
 					 const struct i2c_device_id *id)
 {
 	const struct pixcir_ts_platform_data *pdata = client->dev.platform_data;
@@ -168,7 +165,7 @@ static int __devinit pixcir_i2c_ts_probe(struct i2c_client *client,
 	input_set_drvdata(input, tsdata);
 
 	error = request_threaded_irq(client->irq, NULL, pixcir_ts_isr,
-				     IRQF_TRIGGER_FALLING,
+				     IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 				     client->name, tsdata);
 	if (error) {
 		dev_err(&client->dev, "Unable to request touchscreen IRQ.\n");
@@ -192,7 +189,7 @@ err_free_mem:
 	return error;
 }
 
-static int __devexit pixcir_i2c_ts_remove(struct i2c_client *client)
+static int pixcir_i2c_ts_remove(struct i2c_client *client)
 {
 	struct pixcir_i2c_ts_data *tsdata = i2c_get_clientdata(client);
 
@@ -221,7 +218,7 @@ static struct i2c_driver pixcir_i2c_ts_driver = {
 		.pm	= &pixcir_dev_pm_ops,
 	},
 	.probe		= pixcir_i2c_ts_probe,
-	.remove		= __devexit_p(pixcir_i2c_ts_remove),
+	.remove		= pixcir_i2c_ts_remove,
 	.id_table	= pixcir_i2c_ts_id,
 };
 

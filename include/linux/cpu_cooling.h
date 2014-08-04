@@ -25,75 +25,39 @@
 #define __CPU_COOLING_H__
 
 #include <linux/thermal.h>
+#include <linux/cpumask.h>
 
-#define CPUFREQ_COOLING_START		0
-#define CPUFREQ_COOLING_STOP		1
-
-/**
- * struct freq_clip_table
- * @freq_clip_max: maximum frequency allowed for this cooling state.
- * @temp_level: Temperature level at which the temperature clipping will
- *	happen.
- * @mask_val: cpumask of the allowed cpu's where the clipping will take place.
- *
- * This structure is required to be filled and passed to the
- * cpufreq_cooling_unregister function.
- */
-struct freq_clip_table {
-	unsigned int freq_clip_max;
-	unsigned int temp_level;
-	const struct cpumask *mask_val;
-};
-
-/**
- * cputherm_register_notifier - Register a notifier with cpu cooling interface.
- * @nb:	struct notifier_block * with callback info.
- * @list: integer value for which notification is needed. possible values are
- *	CPUFREQ_COOLING_TYPE and CPUHOTPLUG_COOLING_TYPE.
- *
- * This exported function registers a driver with cpu cooling layer. The driver
- * will be notified when any cpu cooling action is called.
- */
-int cputherm_register_notifier(struct notifier_block *nb, unsigned int list);
-
-/**
- * cputherm_unregister_notifier - Un-register a notifier.
- * @nb:	struct notifier_block * with callback info.
- * @list: integer value for which notification is needed. values possible are
- *	CPUFREQ_COOLING_TYPE.
- *
- * This exported function un-registers a driver with cpu cooling layer.
- */
-int cputherm_unregister_notifier(struct notifier_block *nb, unsigned int list);
-
-#ifdef CONFIG_CPU_FREQ
+#ifdef CONFIG_CPU_THERMAL
 /**
  * cpufreq_cooling_register - function to create cpufreq cooling device.
- * @tab_ptr: table ptr containing the maximum value of frequency to be clipped
- *	for each cooling state.
- * @tab_size: count of entries in the above table.
- * @mask_val: cpumask containing the allowed cpu's where frequency clipping can
- *	happen.
+ * @clip_cpus: cpumask of cpus where the frequency constraints will happen
  */
-struct thermal_cooling_device *cpufreq_cooling_register(
-	struct freq_clip_table *tab_ptr, unsigned int tab_size);
+struct thermal_cooling_device *
+cpufreq_cooling_register(const struct cpumask *clip_cpus);
 
 /**
  * cpufreq_cooling_unregister - function to remove cpufreq cooling device.
  * @cdev: thermal cooling device pointer.
  */
 void cpufreq_cooling_unregister(struct thermal_cooling_device *cdev);
-#else /*!CONFIG_CPU_FREQ*/
-static inline struct thermal_cooling_device *cpufreq_cooling_register(
-	struct freq_clip_table *tab_ptr, unsigned int tab_size)
+
+unsigned long cpufreq_cooling_get_level(unsigned int, unsigned int);
+#else /* !CONFIG_CPU_THERMAL */
+static inline struct thermal_cooling_device *
+cpufreq_cooling_register(const struct cpumask *clip_cpus)
 {
 	return NULL;
 }
-static inline void cpufreq_cooling_unregister(
-		struct thermal_cooling_device *cdev)
+static inline
+void cpufreq_cooling_unregister(struct thermal_cooling_device *cdev)
 {
 	return;
 }
-#endif	/*CONFIG_CPU_FREQ*/
+static inline
+unsigned long cpufreq_cooling_get_level(unsigned int, unsigned int)
+{
+	return THERMAL_CSTATE_INVALID;
+}
+#endif	/* CONFIG_CPU_THERMAL */
 
 #endif /* __CPU_COOLING_H__ */

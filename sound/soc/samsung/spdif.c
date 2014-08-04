@@ -13,12 +13,11 @@
 #include <linux/clk.h>
 #include <linux/io.h>
 #include <linux/module.h>
-#include <linux/pm_runtime.h>
 
 #include <sound/soc.h>
 #include <sound/pcm_params.h>
 
-#include <plat/audio.h>
+#include <linux/platform_data/asoc-s3c.h>
 #include <mach/dma.h>
 
 #include "dma.h"
@@ -199,11 +198,6 @@ static int spdif_hw_params(struct snd_pcm_substream *substream,
 		return -EINVAL;
 	}
 
-	pm_runtime_get_sync(spdif->dev);
-#ifndef CONFIG_PM_RUNTIME
-	clk_enable(spdif->pclk);
-	clk_enable(spdif->sclk);
-#endif
 	snd_soc_dai_set_dma_data(rtd->cpu_dai, substream, dma_data);
 
 	spin_lock_irqsave(&spdif->lock, flags);
@@ -303,11 +297,6 @@ static void spdif_shutdown(struct snd_pcm_substream *substream,
 	cpu_relax();
 
 	writel(clkcon & ~CLKCTL_PWR_ON, regs + CLKCON);
-#ifndef CONFIG_PM_RUNTIME
-	clk_disable(spdif->pclk);
-	clk_disable(spdif->sclk);
-#endif
-	pm_runtime_put_sync(spdif->dev);
 }
 
 #ifdef CONFIG_PM
@@ -318,16 +307,12 @@ static int spdif_suspend(struct snd_soc_dai *cpu_dai)
 
 	dev_dbg(spdif->dev, "Entered %s\n", __func__);
 
-	if (cpu_dai->active) {
-		spdif->saved_clkcon = readl(spdif->regs	+ CLKCON) & CLKCTL_MASK;
-		spdif->saved_con = readl(spdif->regs + CON) & CON_MASK;
-		spdif->saved_cstas = readl(spdif->regs + CSTAS) & CSTAS_MASK;
+	spdif->saved_clkcon = readl(spdif->regs	+ CLKCON) & CLKCTL_MASK;
+	spdif->saved_con = readl(spdif->regs + CON) & CON_MASK;
+	spdif->saved_cstas = readl(spdif->regs + CSTAS) & CSTAS_MASK;
 
-		writel(con | CON_SW_RESET, spdif->regs + CON);
-		cpu_relax();
-
-		pm_runtime_put_sync(spdif->dev);
-	}
+	writel(con | CON_SW_RESET, spdif->regs + CON);
+	cpu_relax();
 
 	return 0;
 }
@@ -338,13 +323,9 @@ static int spdif_resume(struct snd_soc_dai *cpu_dai)
 
 	dev_dbg(spdif->dev, "Entered %s\n", __func__);
 
-	if (cpu_dai->active) {
-		pm_runtime_get_sync(spdif->dev);
-
-		writel(spdif->saved_clkcon, spdif->regs	+ CLKCON);
-		writel(spdif->saved_con, spdif->regs + CON);
-		writel(spdif->saved_cstas, spdif->regs + CSTAS);
-	}
+	writel(spdif->saved_clkcon, spdif->regs	+ CLKCON);
+	writel(spdif->saved_con, spdif->regs + CON);
+	writel(spdif->saved_cstas, spdif->regs + CSTAS);
 
 	return 0;
 }
@@ -376,7 +357,11 @@ static struct snd_soc_dai_driver samsung_spdif_dai = {
 	.resume = spdif_resume,
 };
 
-static __devinit int spdif_probe(struct platform_device *pdev)
+static const struct snd_soc_component_driver samsung_spdif_component = {
+	.name		= "samsung-spdif",
+};
+
+static int spdif_probe(struct platform_device *pdev)
 {
 	struct s3c_audio_pdata *spdif_pdata;
 	struct resource *mem_res, *dma_res;
@@ -416,7 +401,7 @@ static __devinit int spdif_probe(struct platform_device *pdev)
 		ret = -ENOENT;
 		goto err0;
 	}
-	clk_enable(spdif->pclk);
+	clk_prepare_enable(spdif->pclk);
 
 	spdif->sclk = clk_get(&pdev->dev, "sclk_spdif");
 	if (IS_ERR(spdif->sclk)) {
@@ -424,7 +409,7 @@ static __devinit int spdif_probe(struct platform_device *pdev)
 		ret = -ENOENT;
 		goto err1;
 	}
-	clk_enable(spdif->sclk);
+	clk_prepare_enable(spdif->sclk);
 
 	/* Request S/PDIF Register's memory region */
 	if (!request_mem_region(mem_res->start,
@@ -442,9 +427,9 @@ static __devinit int spdif_probe(struct platform_device *pdev)
 	}
 
 	dev_set_drvdata(&pdev->dev, spdif);
-	pm_runtime_enable(spdif->dev);
 
-	ret = snd_soc_register_dai(&pdev->dev, &samsung_spdif_dai);
+	ret = snd_soc_register_component(&pdev->dev, &samsung_spdif_component,
+					 &samsung_spdif_dai, 1);
 	if (ret != 0) {
 		dev_err(&pdev->dev, "fail to register dai\n");
 		goto err4;
@@ -457,32 +442,36 @@ static __devinit int spdif_probe(struct platform_device *pdev)
 
 	spdif->dma_playback = &spdif_stereo_out;
 
-	clk_disable(spdif->sclk);
-	clk_disable(spdif->pclk);
+	ret = asoc_dma_platform_register(&pdev->dev);
+	if (ret) {
+		dev_err(&pdev->dev, "failed to register DMA: %d\n", ret);
+		goto err5;
+	}
 
 	return 0;
-
+err5:
+	snd_soc_unregister_component(&pdev->dev);
 err4:
-	pm_runtime_disable(spdif->dev);
 	iounmap(spdif->regs);
 err3:
 	release_mem_region(mem_res->start, resource_size(mem_res));
 err2:
-	clk_disable(spdif->sclk);
+	clk_disable_unprepare(spdif->sclk);
 	clk_put(spdif->sclk);
 err1:
-	clk_disable(spdif->pclk);
+	clk_disable_unprepare(spdif->pclk);
 	clk_put(spdif->pclk);
 err0:
 	return ret;
 }
 
-static __devexit int spdif_remove(struct platform_device *pdev)
+static int spdif_remove(struct platform_device *pdev)
 {
 	struct samsung_spdif_info *spdif = &spdif_info;
 	struct resource *mem_res;
 
-	snd_soc_unregister_dai(&pdev->dev);
+	asoc_dma_platform_unregister(&pdev->dev);
+	snd_soc_unregister_component(&pdev->dev);
 
 	iounmap(spdif->regs);
 
@@ -490,56 +479,20 @@ static __devexit int spdif_remove(struct platform_device *pdev)
 	if (mem_res)
 		release_mem_region(mem_res->start, resource_size(mem_res));
 
-	pm_runtime_put_sync(spdif->dev);
-	pm_runtime_disable(spdif->dev);
-
+	clk_disable_unprepare(spdif->sclk);
 	clk_put(spdif->sclk);
+	clk_disable_unprepare(spdif->pclk);
 	clk_put(spdif->pclk);
 
 	return 0;
 }
 
-#ifdef CONFIG_PM_RUNTIME
-static int spdif_runtime_suspend(struct device *dev)
-{
-	struct samsung_spdif_info *spdif = dev_get_drvdata(dev);
-
-	dev_dbg(spdif->dev, "Entered %s\n", __func__);
-
-	clk_disable(spdif->sclk);
-	clk_disable(spdif->pclk);
-
-	return 0;
-}
-
-static int spdif_runtime_resume(struct device *dev)
-{
-	struct samsung_spdif_info *spdif = dev_get_drvdata(dev);
-
-	dev_dbg(spdif->dev, "Entered %s\n", __func__);
-
-	clk_enable(spdif->pclk);
-	clk_enable(spdif->sclk);
-
-	return 0;
-}
-#endif
-
-static const struct dev_pm_ops spdif_pmops = {
-	SET_RUNTIME_PM_OPS(
-		spdif_runtime_suspend,
-		spdif_runtime_resume,
-		NULL
-	)
-};
-
 static struct platform_driver samsung_spdif_driver = {
 	.probe	= spdif_probe,
-	.remove	= __devexit_p(spdif_remove),
+	.remove	= spdif_remove,
 	.driver	= {
 		.name	= "samsung-spdif",
 		.owner	= THIS_MODULE,
-		.pm	= &spdif_pmops,
 	},
 };
 

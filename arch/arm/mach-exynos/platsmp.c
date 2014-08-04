@@ -22,35 +22,36 @@
 #include <linux/io.h>
 
 #include <asm/cacheflush.h>
-#include <asm/hardware/gic.h>
 #include <asm/smp_plat.h>
 #include <asm/smp_scu.h>
+#include <asm/firmware.h>
 
 #include <mach/hardware.h>
 #include <mach/regs-clock.h>
 #include <mach/regs-pmu.h>
-#include <mach/smc.h>
 
 #include <plat/cpu.h>
-#ifdef CONFIG_WATCHDOG
-#include <plat/regs-watchdog.h>
-#endif
+
+#include "common.h"
 
 extern void exynos4_secondary_startup(void);
 
-struct _cpu_boot_info {
-	void __iomem *boot_base;
-	void __iomem *power_base;
-};
+static inline void __iomem *cpu_boot_reg_base(void)
+{
+	if (soc_is_exynos4210() && samsung_rev() == EXYNOS4210_REV_1_1)
+		return S5P_INFORM5;
+	return S5P_VA_SYSRAM;
+}
 
-struct _cpu_boot_info cpu_boot_info[NR_CPUS];
+static inline void __iomem *cpu_boot_reg(int cpu)
+{
+	void __iomem *boot_reg;
 
-/*
- * control for which core is the next to come out of the secondary
- * boot "holding pen"
- */
-
-volatile int pen_release = -1;
+	boot_reg = cpu_boot_reg_base();
+	if (soc_is_exynos4412())
+		boot_reg += 4*cpu;
+	return boot_reg;
+}
 
 /*
  * Write pen_release in a way that is guaranteed to be visible to all
@@ -72,24 +73,13 @@ static void __iomem *scu_base_addr(void)
 
 static DEFINE_SPINLOCK(boot_lock);
 
-void __cpuinit platform_secondary_init(unsigned int cpu)
+static void __cpuinit exynos_secondary_init(unsigned int cpu)
 {
-	/*
-	 * if any interrupts are already enabled for the primary
-	 * core (e.g. timer irq), then they will not have been enabled
-	 * for us: do so
-	 */
-	gic_secondary_init(0);
-
 	/*
 	 * let the primary processor know we're out of the
 	 * pen, then head off into the C entry point
 	 */
 	write_pen_release(-1);
-
-#ifdef CONFIG_ARM_TRUSTZONE
-	clear_boot_flag(cpu, HOTPLUG);
-#endif
 
 	/*
 	 * Synchronise with the boot thread.
@@ -98,108 +88,16 @@ void __cpuinit platform_secondary_init(unsigned int cpu)
 	spin_unlock(&boot_lock);
 }
 
-void change_power_base(unsigned int cpu, void __iomem *base)
-{
-	cpu_boot_info[cpu].power_base = base;
-}
-
-void change_all_power_base_to(unsigned int cluster)
-{
-	int i;
-	int offset = 0;
-
-	if (!soc_is_exynos5410() && !soc_is_exynos5420())
-		return;
-
-	if (soc_is_exynos5410())  {
-		if (samsung_rev() < EXYNOS5410_REV_1_0) {
-			if (cluster == 0)
-				offset = 4;
-		} else {
-			if (cluster != 0)
-				offset = 4;
-		}
-	} else {
-		if (cluster)
-			offset = 4;
-	}
-
-	for (i = 0; i < 4; i++) {
-		cpu_boot_info[i].power_base =
-			EXYNOS_ARM_CORE_CONFIGURATION(offset + i);
-	}
-}
-
-static int exynos_power_up_cpu(unsigned int cpu)
-{
-	unsigned int timeout;
-	unsigned int val;
-	void __iomem *power_base;
-	unsigned int cluster = (read_cpuid_mpidr() >> 8) & 0xf;
-
-	power_base = cpu_boot_info[cpu].power_base;
-	if (power_base == 0)
-		return -EPERM;
-
-	val = __raw_readl(power_base + 0x4);
-	if (!(val & EXYNOS_CORE_LOCAL_PWR_EN)) {
-		__raw_writel(EXYNOS_CORE_LOCAL_PWR_EN, power_base);
-
-		/* wait max 10 ms until cpu is on */
-		timeout = 10;
-		while (timeout) {
-			val = __raw_readl(power_base + 0x4);
-
-			if ((val & EXYNOS_CORE_LOCAL_PWR_EN) ==
-			     EXYNOS_CORE_LOCAL_PWR_EN)
-				break;
-
-			mdelay(1);
-			timeout--;
-		}
-
-		if (timeout == 0) {
-			printk(KERN_ERR "cpu%d power up failed", cpu);
-			return -ETIMEDOUT;
-		}
-	}
-
-	if (cluster) {
-		while(!__raw_readl(EXYNOS_PMU_SPARE2))
-			udelay(10);
-
-		udelay(10);
-
-		printk(KERN_DEBUG "cpu%d: SWRESET\n", cpu);
-
-		val = ((1 << 20) | (1 << 8)) << cpu;
-		__raw_writel(val, EXYNOS_SWRESET);
-	}
-
-	return 0;
-}
-
-int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
+static int __cpuinit exynos_boot_secondary(unsigned int cpu, struct task_struct *idle)
 {
 	unsigned long timeout;
-	int ret;
+	unsigned long phys_cpu = cpu_logical_map(cpu);
 
 	/*
 	 * Set synchronisation state between this boot processor
 	 * and the secondary one
 	 */
 	spin_lock(&boot_lock);
-
-#ifdef CONFIG_WATCHDOG
-	if (soc_is_exynos5250())
-		watchdog_save();
-#endif
-
-	ret = exynos_power_up_cpu(cpu);
-	if (ret) {
-		spin_unlock(&boot_lock);
-		return ret;
-	}
 
 	/*
 	 * The secondary processor is waiting to be released from
@@ -209,8 +107,29 @@ int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
 	 * Note that "pen_release" is the hardware CPU ID, whereas
 	 * "cpu" is Linux's internal ID.
 	 */
-	write_pen_release(cpu_logical_map(cpu));
+	write_pen_release(phys_cpu);
 
+	if (!(__raw_readl(S5P_ARM_CORE1_STATUS) & S5P_CORE_LOCAL_PWR_EN)) {
+		__raw_writel(S5P_CORE_LOCAL_PWR_EN,
+			     S5P_ARM_CORE1_CONFIGURATION);
+
+		timeout = 10;
+
+		/* wait max 10 ms until cpu1 is on */
+		while ((__raw_readl(S5P_ARM_CORE1_STATUS)
+			& S5P_CORE_LOCAL_PWR_EN) != S5P_CORE_LOCAL_PWR_EN) {
+			if (timeout-- == 0)
+				break;
+
+			mdelay(1);
+		}
+
+		if (timeout == 0) {
+			printk(KERN_ERR "cpu1 power enable failed");
+			spin_unlock(&boot_lock);
+			return -ETIMEDOUT;
+		}
+	}
 	/*
 	 * Send the secondary CPU a soft interrupt, thereby causing
 	 * the boot monitor to read the system wide flags register,
@@ -219,27 +138,22 @@ int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
 
 	timeout = jiffies + (1 * HZ);
 	while (time_before(jiffies, timeout)) {
+		unsigned long boot_addr;
+
 		smp_rmb();
 
-#ifdef CONFIG_ARM_TRUSTZONE
-		if (soc_is_exynos4210() || soc_is_exynos4212() ||
-			soc_is_exynos5250())
-			exynos_smc(SMC_CMD_CPU1BOOT, 0, 0, 0);
-		else if (soc_is_exynos4412())
-			exynos_smc(SMC_CMD_CPU1BOOT, cpu, 0, 0);
-#endif
-		__raw_writel(virt_to_phys(exynos4_secondary_startup),
-			cpu_boot_info[cpu].boot_base);
+		boot_addr = virt_to_phys(exynos4_secondary_startup);
 
-#ifdef CONFIG_WATCHDOG
-		if (soc_is_exynos5250())
-			watchdog_restore();
-#endif
+		/*
+		 * Try to set boot address using firmware first
+		 * and fall back to boot register if it fails.
+		 */
+		if (call_firmware_op(set_cpu_boot_addr, phys_cpu, boot_addr))
+			__raw_writel(boot_addr, cpu_boot_reg(phys_cpu));
 
-		if (soc_is_exynos5410() || soc_is_exynos5420())
-			dsb_sev();
-		else
-			arm_send_ping_ipi(cpu);
+		call_firmware_op(cpu_boot, phys_cpu);
+
+		arch_send_wakeup_ipi_mask(cpumask_of(cpu));
 
 		if (pen_release == -1)
 			break;
@@ -261,16 +175,13 @@ int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
  * which may be present or become present in the system.
  */
 
-void __init smp_init_cpus(void)
+static void __init exynos_smp_init_cpus(void)
 {
 	void __iomem *scu_base = scu_base_addr();
 	unsigned int i, ncores;
 
-	if (soc_is_exynos4210() || soc_is_exynos4212() ||
-	    soc_is_exynos5250())
+	if (soc_is_exynos5250())
 		ncores = 2;
-	else if (soc_is_exynos4412() || soc_is_exynos5410() || soc_is_exynos5420())
-		ncores = 4;
 	else
 		ncores = scu_base ? scu_get_core_count(scu_base) : 1;
 
@@ -283,51 +194,42 @@ void __init smp_init_cpus(void)
 
 	for (i = 0; i < ncores; i++)
 		set_cpu_possible(i, true);
-
-	set_smp_cross_call(gic_raise_softirq);
 }
 
-void __init platform_smp_prepare_cpus(unsigned int max_cpus)
+static void __init exynos_smp_prepare_cpus(unsigned int max_cpus)
 {
 	int i;
 
-	if (soc_is_exynos4210() || soc_is_exynos4212() || soc_is_exynos4412())
+	if (!(soc_is_exynos5250() || soc_is_exynos5440()))
 		scu_enable(scu_base_addr());
 
-	for (i = 1; i < max_cpus; i++) {
-		int pwr_offset = 0;
+	/*
+	 * Write the address of secondary startup into the
+	 * system-wide flags register. The boot monitor waits
+	 * until it receives a soft interrupt, and then the
+	 * secondary CPU branches to this address.
+	 *
+	 * Try using firmware operation first and fall back to
+	 * boot register if it fails.
+	 */
+	for (i = 1; i < max_cpus; ++i) {
+		unsigned long phys_cpu;
+		unsigned long boot_addr;
 
-#ifdef CONFIG_ARM_TRUSTZONE
-		cpu_boot_info[i].boot_base = S5P_VA_SYSRAM_NS + 0x1C;
-#else
+		phys_cpu = cpu_logical_map(i);
+		boot_addr = virt_to_phys(exynos4_secondary_startup);
 
-		if (soc_is_exynos4210() &&
-			(samsung_rev() >= EXYNOS4210_REV_1_1))
-			cpu_boot_info[i].boot_base = EXYNOS_INFORM5;
-		else
-			cpu_boot_info[i].boot_base = S5P_VA_SYSRAM;
-#endif
-		if (soc_is_exynos4412())
-			cpu_boot_info[i].boot_base += (0x4 * i);
-		else if (soc_is_exynos5410()) {
-			int cluster_id = read_cpuid_mpidr() & 0x100;
-			if (samsung_rev() < EXYNOS5410_REV_1_0) {
-				if (cluster_id == 0)
-					pwr_offset = 4;
-			} else {
-				if (cluster_id != 0)
-					pwr_offset = 4;
-			}
-		} else if (soc_is_exynos5420()) {
-			int cluster_id = read_cpuid_mpidr() & 0x100;
-#ifndef CONFIG_ARM_TRUSTZONE
-			cpu_boot_info[i].boot_base += (0x4 * i);
-#endif
-			if (cluster_id != 0)
-				pwr_offset = 4;
-		}
-
-		cpu_boot_info[i].power_base =
-			EXYNOS_ARM_CORE_CONFIGURATION(i + pwr_offset);
+		if (call_firmware_op(set_cpu_boot_addr, phys_cpu, boot_addr))
+			__raw_writel(boot_addr, cpu_boot_reg(phys_cpu));
 	}
 }
+
+struct smp_operations exynos_smp_ops __initdata = {
+	.smp_init_cpus		= exynos_smp_init_cpus,
+	.smp_prepare_cpus	= exynos_smp_prepare_cpus,
+	.smp_secondary_init	= exynos_secondary_init,
+	.smp_boot_secondary	= exynos_boot_secondary,
+#ifdef CONFIG_HOTPLUG_CPU
+	.cpu_die		= exynos_cpu_die,
+#endif
+};

@@ -1,7 +1,7 @@
 /*
  * wm_hubs.c  --  WM8993/4 common code
  *
- * Copyright 2009 Wolfson Microelectronics plc
+ * Copyright 2009-12 Wolfson Microelectronics plc
  *
  * Author: Mark Brown <broonie@opensource.wolfsonmicro.com>
  *
@@ -199,11 +199,12 @@ static void wm_hubs_dcs_cache_set(struct snd_soc_codec *codec, u16 dcs_cfg)
 	list_add_tail(&cache->list, &hubs->dcs_cache);
 }
 
-static void wm_hubs_read_dc_servo(struct snd_soc_codec *codec,
+static int wm_hubs_read_dc_servo(struct snd_soc_codec *codec,
 				  u16 *reg_l, u16 *reg_r)
 {
 	struct wm_hubs_data *hubs = snd_soc_codec_get_drvdata(codec);
 	u16 dcs_reg, reg;
+	int ret = 0;
 
 	switch (hubs->dcs_readback_mode) {
 	case 2:
@@ -236,8 +237,9 @@ static void wm_hubs_read_dc_servo(struct snd_soc_codec *codec,
 		break;
 	default:
 		WARN(1, "Unknown DCS readback method\n");
-		return;
+		ret = -1;
 	}
+	return ret;
 }
 
 /*
@@ -248,7 +250,7 @@ static void enable_dc_servo(struct snd_soc_codec *codec)
 	struct wm_hubs_data *hubs = snd_soc_codec_get_drvdata(codec);
 	struct wm_hubs_dcs_cache *cache;
 	s8 offset;
-	u16 reg_l = 0, reg_r = 0, dcs_cfg, dcs_reg;
+	u16 reg_l, reg_r, dcs_cfg, dcs_reg;
 
 	switch (hubs->dcs_readback_mode) {
 	case 2:
@@ -286,7 +288,8 @@ static void enable_dc_servo(struct snd_soc_codec *codec)
 				  WM8993_DCS_TRIG_STARTUP_1);
 	}
 
-	wm_hubs_read_dc_servo(codec, &reg_l, &reg_r);
+	if (wm_hubs_read_dc_servo(codec, &reg_l, &reg_r) < 0)
+		return;
 
 	dev_dbg(codec->dev, "DCS input: %x %x\n", reg_l, reg_r);
 
@@ -644,6 +647,28 @@ static int lineout_event(struct snd_soc_dapm_widget *w,
 	return 0;
 }
 
+static int micbias_event(struct snd_soc_dapm_widget *w,
+			 struct snd_kcontrol *kcontrol, int event)
+{
+	struct snd_soc_codec *codec = w->codec;
+	struct wm_hubs_data *hubs = snd_soc_codec_get_drvdata(codec);
+
+	switch (w->shift) {
+	case WM8993_MICB1_ENA_SHIFT:
+		if (hubs->micb1_delay)
+			msleep(hubs->micb1_delay);
+		break;
+	case WM8993_MICB2_ENA_SHIFT:
+		if (hubs->micb2_delay)
+			msleep(hubs->micb2_delay);
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 void wm_hubs_update_class_w(struct snd_soc_codec *codec)
 {
 	struct wm_hubs_data *hubs = snd_soc_codec_get_drvdata(codec);
@@ -839,8 +864,10 @@ SND_SOC_DAPM_INPUT("IN1RP"),
 SND_SOC_DAPM_INPUT("IN2RN"),
 SND_SOC_DAPM_INPUT("IN2RP:VXRP"),
 
-SND_SOC_DAPM_SUPPLY("MICBIAS2", WM8993_POWER_MANAGEMENT_1, 5, 0, NULL, 0),
-SND_SOC_DAPM_SUPPLY("MICBIAS1", WM8993_POWER_MANAGEMENT_1, 4, 0, NULL, 0),
+SND_SOC_DAPM_SUPPLY("MICBIAS2", WM8993_POWER_MANAGEMENT_1, 5, 0,
+		    micbias_event, SND_SOC_DAPM_POST_PMU),
+SND_SOC_DAPM_SUPPLY("MICBIAS1", WM8993_POWER_MANAGEMENT_1, 4, 0,
+		    micbias_event, SND_SOC_DAPM_POST_PMU),
 
 SND_SOC_DAPM_MIXER("IN1L PGA", WM8993_POWER_MANAGEMENT_2, 6, 0,
 		   in1l_pga, ARRAY_SIZE(in1l_pga)),
@@ -1175,13 +1202,16 @@ EXPORT_SYMBOL_GPL(wm_hubs_add_analogue_routes);
 int wm_hubs_handle_analogue_pdata(struct snd_soc_codec *codec,
 				  int lineout1_diff, int lineout2_diff,
 				  int lineout1fb, int lineout2fb,
-				  int jd_scthr, int jd_thr, int micbias1_lvl,
-				  int micbias2_lvl)
+				  int jd_scthr, int jd_thr,
+				  int micbias1_delay, int micbias2_delay,
+				  int micbias1_lvl, int micbias2_lvl)
 {
 	struct wm_hubs_data *hubs = snd_soc_codec_get_drvdata(codec);
 
 	hubs->lineout1_se = !lineout1_diff;
 	hubs->lineout2_se = !lineout2_diff;
+	hubs->micb1_delay = micbias1_delay;
+	hubs->micb2_delay = micbias2_delay;
 
 	if (!lineout1_diff)
 		snd_soc_update_bits(codec, WM8993_LINE_MIXER1,

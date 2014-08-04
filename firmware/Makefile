@@ -26,7 +26,6 @@ fw-shipped- += acenic/tg1.bin
 else
 acenic-objs := acenic/tg1.bin acenic/tg2.bin
 endif
-fw-shipped-$(CONFIG_3C359) += 3com/3C359.bin
 fw-shipped-$(CONFIG_ACENIC) += $(acenic-objs)
 fw-shipped-$(CONFIG_ADAPTEC_STARFIRE) += adaptec/starfire_rx.bin \
 					 adaptec/starfire_tx.bin
@@ -41,10 +40,8 @@ fw-shipped-$(CONFIG_BNX2) += bnx2/bnx2-mips-09-6.2.1a.fw \
 			     bnx2/bnx2-mips-06-6.2.1.fw \
 			     bnx2/bnx2-rv2p-06-6.0.15.fw
 fw-shipped-$(CONFIG_CASSINI) += sun/cassini.bin
-fw-shipped-$(CONFIG_COMPUTONE) += intelliport2.bin
 fw-shipped-$(CONFIG_CHELSIO_T3) += cxgb3/t3b_psram-1.1.0.bin \
 				   cxgb3/t3c_psram-1.1.0.bin \
-				   cxgb3/t3fw-7.10.0.bin \
 				   cxgb3/ael2005_opt_edc.bin \
 				   cxgb3/ael2005_twx_edc.bin \
 				   cxgb3/ael2020_twx_edc.bin
@@ -86,7 +83,6 @@ fw-shipped-$(CONFIG_SCSI_QLOGIC_1280) += qlogic/1040.bin qlogic/1280.bin \
 					 qlogic/12160.bin
 fw-shipped-$(CONFIG_SCSI_QLOGICPTI) += qlogic/isp1000.bin
 fw-shipped-$(CONFIG_INFINIBAND_QIB) += qlogic/sd7220.fw
-fw-shipped-$(CONFIG_SMCTR) += tr_smctr.bin
 fw-shipped-$(CONFIG_SND_KORG1212) += korg/k1212.dsp
 fw-shipped-$(CONFIG_SND_MAESTRO3) += ess/maestro3_assp_kernel.fw \
 				     ess/maestro3_assp_minisrc.fw
@@ -101,7 +97,6 @@ fw-shipped-$(CONFIG_TEHUTI) += tehuti/bdx.bin
 fw-shipped-$(CONFIG_TIGON3) += tigon/tg3.bin tigon/tg3_tso.bin \
 			       tigon/tg3_tso5.bin
 fw-shipped-$(CONFIG_TYPHOON) += 3com/typhoon.bin
-fw-shipped-$(CONFIG_USB_DABUSB) += dabusb/firmware.fw dabusb/bitstream.bin
 fw-shipped-$(CONFIG_USB_EMI26) += emi26/loader.fw emi26/firmware.fw \
 				  emi26/bitstream.fw
 fw-shipped-$(CONFIG_USB_EMI62) += emi62/loader.fw emi62/bitstream.fw \
@@ -140,59 +135,6 @@ fw-shipped-$(CONFIG_USB_SERIAL_XIRCOM) += keyspan_pda/xircom_pgs.fw
 fw-shipped-$(CONFIG_USB_VICAM) += vicam/firmware.fw
 fw-shipped-$(CONFIG_VIDEO_CPIA2) += cpia2/stv0672_vp4.bin
 fw-shipped-$(CONFIG_YAM) += yam/1200.bin yam/9600.bin
-ifeq ("$(CONFIG_KLIMT)", "y")
-fw-shipped-$(CONFIG_KEYBOARD_CYPRESS_TOUCH) += cypress/cypress_klimt.fw
-else
-fw-shipped-$(CONFIG_KEYBOARD_CYPRESS_TOUCH) += cypress/cypress_ha_m07.fw cypress/cypress_ha_m09.fw
-endif
-fw-shipped-$(CONFIG_EPEN_WACOM_G9PM) += epen/W9001_B887.bin epen/W9001_B911.bin
-ifeq ("$(CONFIG_EPEN_WACOM_G9PLL)", "y")
-fw-shipped-$(CONFIG_N1A) += epen/W9007A_LT03.bin
-fw-shipped-$(CONFIG_V1A) += epen/W9007A_V1.bin
-fw-shipped-$(CONFIG_CHAGALL) += epen/W9007A_V1.bin
-endif
-fw-shipped-$(CONFIG_EPEN_WACOM_G10PM) += epen/W9010_HA_B934.bin epen/W9010_HA_B968.bin
-
-ifeq ("$(CONFIG_KEYBOARD_TC300K)", "y")
-fw-shipped-$(CONFIG_CHAGALL) += coreriver/tc300k_chagall.fw
-fw-shipped-$(CONFIG_CHAGALL) += coreriver/tc300k_chagall_r03.fw
-endif
-
-#for sensorhub
-fw-shipped-$(CONFIG_SENSORS_SSP_STM) += ssp_H_3G.fw ssp_H_3G_rev5.fw
-fw-shipped-$(CONFIG_SENSORS_SSP) += ssp_crashed.fw
-
-TSPFIRMWARE_DIRECTORY = firmware/tsp_atmel
-ifeq ($(shell test -d $(TSPFIRMWARE_DIRECTORY) && echo yes),yes)
-fw-shipped-$(CONFIG_TOUCHSCREEN_MXT540E) += tsp_atmel/mXT540E.fw
-fw-shipped-$(CONFIG_TOUCHSCREEN_ATMEL_MXT540S) += tsp_atmel/mXT540Sg.fw tsp_atmel/mXT540Si.fw
-fw-shipped-$(CONFIG_TOUCHSCREEN_ATMEL_MXT1664T) += tsp_atmel/mxtt_klimt.fw
-
-ifeq ("$(CONFIG_TOUCHSCREEN_ATMEL_MXT1664S)", "y")
-fw-shipped-$(CONFIG_V1A) += tsp_atmel/mXT1664S_v.fw
-fw-shipped-$(CONFIG_V2A) += tsp_atmel/mXT1664S_v.fw
-fw-shipped-$(CONFIG_N1A) += tsp_atmel/mXT1664S_n.fw
-fw-shipped-$(CONFIG_N2A) += tsp_atmel/mXT1664S_n.fw
-endif
-
-else
-$(warning '$(TSPFIRMWARE_DIRECTORY)' directory dose not exist)
-endif
-
-TSPFIRMWARE_DIRECTORY = firmware/tsp_synaptics
-ifeq ($(shell test -d $(TSPFIRMWARE_DIRECTORY) && echo yes),yes)
-fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI) += tsp_synaptics/synaptics_a0_h.fw
-fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI) += tsp_synaptics/synaptics_a0_h_no_tr.fw
-ifeq ("$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_DSX)", "y")
-fw-shipped-$(CONFIG_CHAGALL) += tsp_synaptics/synaptics_chagall_5700.fw
-fw-shipped-$(CONFIG_CHAGALL) += tsp_synaptics/synaptics_chagall_5710.fw
-fw-shipped-$(CONFIG_KLIMT) += tsp_synaptics/synaptics_klimt_5707.fw
-endif
-fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_I2C) += tsp_synaptics/synaptics_v2.fw
-fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_I2C) += tsp_synaptics/synaptics_v2_g2.fw
-else
-$(warning '$(TSPFIRMWARE_DIRECTORY)' directory dose not exist)
-endif
 
 fw-shipped-all := $(fw-shipped-y) $(fw-shipped-m) $(fw-shipped-)
 

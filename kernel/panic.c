@@ -22,11 +22,6 @@
 #include <linux/sysrq.h>
 #include <linux/init.h>
 #include <linux/nmi.h>
-#include <linux/dmi.h>
-#include "sched/sched.h"
-#ifdef CONFIG_SEC_DEBUG_SUBSYS
-#include <mach/sec_debug.h>
-#endif
 
 #define PANIC_TIMER_STEP 100
 #define PANIC_BLINK_SPD 18
@@ -34,7 +29,7 @@
 /* Machine specific panic information string */
 char *mach_panic_string;
 
-int panic_on_oops;
+int panic_on_oops = CONFIG_PANIC_ON_OOPS_VALUE;
 static unsigned long tainted_mask;
 static int pause_on_oops;
 static int pause_on_oops_flag;
@@ -76,37 +71,6 @@ void __weak panic_smp_self_stop(void)
  *
  *	This function never returns.
  */
-#ifdef CONFIG_BL_SWITCHER
-#include <mach/regs-pmu.h>
-#include <linux/io.h>
-
-extern void bL_debug_info(void);
-
-void exynos_core_stat(void)
-{
-	unsigned int cluster, cpu, len = 0;
-	char buf[72];
-
-	len += snprintf(buf, sizeof(buf) - len, "BL Core Status:\n");
-	len += snprintf(buf + len, sizeof(buf) - len, "      0 1 2 3 L2\n");
-	for (cluster = 0; cluster < 2; cluster++) {
-		for_each_present_cpu(cpu) {
-			unsigned int cpuid = cluster ? 4 : 0;
-			if (cpu == 0)
-				len += snprintf(buf + len, sizeof(buf) - len,
-					"%s :", cluster ? " A7" : "A15");
-			len += snprintf(buf + len, sizeof(buf) - len, " %d",
-				__raw_readl(EXYNOS_ARM_CORE_STATUS(cpu + cpuid))
-				& 0x3 ? 1 : 0);
-		}
-		len += snprintf(buf + len, sizeof(buf) - len, "  %d\n",
-				__raw_readl(EXYNOS_COMMON_STATUS(cluster))
-				& 0x3 ? 1 : 0);
-	}
-	printk(KERN_EMERG "%s", buf);
-}
-#endif
-
 void panic(const char *fmt, ...)
 {
 	static DEFINE_SPINLOCK(panic_lock);
@@ -114,6 +78,14 @@ void panic(const char *fmt, ...)
 	va_list args;
 	long i, i_next = 0;
 	int state = 0;
+
+	/*
+	 * Disable local interrupts. This will prevent panic_smp_self_stop
+	 * from deadlocking the first cpu that invokes the panic, since
+	 * there is nothing to prevent an interrupt handler (that runs
+	 * after the panic_lock is acquired) from invoking panic again.
+	 */
+	local_irq_disable();
 
 	/*
 	 * It's possible to come here directly from a panic-assertion and
@@ -134,10 +106,6 @@ void panic(const char *fmt, ...)
 	vsnprintf(buf, sizeof(buf), fmt, args);
 	va_end(args);
 	printk(KERN_EMERG "Kernel panic - not syncing: %s\n",buf);
-#ifdef CONFIG_BL_SWITCHER
-	bL_debug_info();
-	exynos_core_stat();
-#endif
 #ifdef CONFIG_DEBUG_BUGVERBOSE
 	/*
 	 * Avoid nested stack-dumping if a panic occurs during oops processing
@@ -145,11 +113,6 @@ void panic(const char *fmt, ...)
 	if (!test_taint(TAINT_DIE) && oops_in_progress <= 1)
 		dump_stack();
 #endif
-#ifdef CONFIG_SEC_DEBUG_SUBSYS
-	sec_debug_save_panic_info(buf,
-		(unsigned int)__builtin_return_address(0));
-#endif
-	/* sysrq_sched_debug_show(); */
 
 	/*
 	 * If we have crashed and we have a crash kernel loaded let it handle
@@ -301,26 +264,19 @@ unsigned long get_taint(void)
 	return tainted_mask;
 }
 
-void add_taint(unsigned flag)
+/**
+ * add_taint: add a taint flag if not already set.
+ * @flag: one of the TAINT_* constants.
+ * @lockdep_ok: whether lock debugging is still OK.
+ *
+ * If something bad has gone wrong, you'll want @lockdebug_ok = false, but for
+ * some notewortht-but-not-corrupting cases, it can be set to true.
+ */
+void add_taint(unsigned flag, enum lockdep_ok lockdep_ok)
 {
-	/*
-	 * Can't trust the integrity of the kernel anymore.
-	 * We don't call directly debug_locks_off() because the issue
-	 * is not necessarily serious enough to set oops_in_progress to 1
-	 * Also we want to keep up lockdep for staging/out-of-tree
-	 * development and post-warning case.
-	 */
-	switch (flag) {
-	case TAINT_CRAP:
-	case TAINT_OOT_MODULE:
-	case TAINT_WARN:
-	case TAINT_FIRMWARE_WORKAROUND:
-		break;
-
-	default:
-		if (__debug_locks_off())
-			printk(KERN_WARNING "Disabling lock debugging due to kernel taint\n");
-	}
+	if (lockdep_ok == LOCKDEP_NOW_UNRELIABLE && __debug_locks_off())
+		printk(KERN_WARNING
+		       "Disabling lock debugging due to kernel taint\n");
 
 	set_bit(flag, &tainted_mask);
 }
@@ -454,13 +410,8 @@ struct slowpath_args {
 static void warn_slowpath_common(const char *file, int line, void *caller,
 				 unsigned taint, struct slowpath_args *args)
 {
-	const char *board;
-
 	printk(KERN_WARNING "------------[ cut here ]------------\n");
 	printk(KERN_WARNING "WARNING: at %s:%d %pS()\n", file, line, caller);
-	board = dmi_get_system_info(DMI_PRODUCT_NAME);
-	if (board)
-		printk(KERN_WARNING "Hardware name: %s\n", board);
 
 	if (args)
 		vprintk(args->fmt, args->args);
@@ -468,7 +419,8 @@ static void warn_slowpath_common(const char *file, int line, void *caller,
 	print_modules();
 	dump_stack();
 	print_oops_end_marker();
-	add_taint(taint);
+	/* Just a warning, don't kill lockdep. */
+	add_taint(taint, LOCKDEP_STILL_OK);
 }
 
 void warn_slowpath_fmt(const char *file, int line, const char *fmt, ...)

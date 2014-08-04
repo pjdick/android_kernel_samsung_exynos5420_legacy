@@ -1,5 +1,6 @@
-/*
- * Copyright (c) 2011-2012 Samsung Electronics Co., Ltd.
+/* linux/arch/arm/mach-exynos4/dma.c
+ *
+ * Copyright (c) 2011 Samsung Electronics Co., Ltd.
  *		http://www.samsung.com
  *
  * Copyright (C) 2010 Samsung Electronics Co. Ltd.
@@ -102,7 +103,7 @@ static u8 exynos4212_pdma0_peri[] = {
 	DMACH_MIPI_HSI5,
 };
 
-u8 exynos5250_pdma0_peri[] = {
+static u8 exynos5250_pdma0_peri[] = {
 	DMACH_PCM0_RX,
 	DMACH_PCM0_TX,
 	DMACH_PCM2_RX,
@@ -137,80 +138,10 @@ u8 exynos5250_pdma0_peri[] = {
 	DMACH_MIPI_HSI6,
 };
 
-static u8 exynos5410_pdma0_peri[] = {
-	DMACH_PCM0_RX,
-	DMACH_PCM0_TX,
-	DMACH_PCM2_RX,
-	DMACH_PCM2_TX,
-	DMACH_SPI0_RX,
-	DMACH_SPI0_TX,
-	DMACH_SPI2_RX,
-	DMACH_SPI2_TX,
-	DMACH_I2S0S_TX,
-	DMACH_I2S0_RX,
-	DMACH_I2S0_TX,
-	DMACH_I2S2_RX,
-	DMACH_I2S2_TX,
-	DMACH_UART0_RX,
-	DMACH_UART0_TX,
-	DMACH_UART2_RX,
-	DMACH_UART2_TX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_AC97_MICIN,
-	DMACH_AC97_PCMIN,
-	DMACH_AC97_PCMOUT,
-	DMACH_MIPI_HSI0,
-	DMACH_MIPI_HSI2,
-	DMACH_MIPI_HSI4,
-	DMACH_MIPI_HSI6,
-};
-
-static u8 exynos5420_pdma0_peri[] = {
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_PCM2_RX,
-	DMACH_PCM2_TX,
-	DMACH_SPI0_RX,
-	DMACH_SPI0_TX,
-	DMACH_SPI2_RX,
-	DMACH_SPI2_TX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_I2S2_RX,
-	DMACH_I2S2_TX,
-	DMACH_UART0_RX,
-	DMACH_UART0_TX,
-	DMACH_UART2_RX,
-	DMACH_UART2_TX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_AC97_MICIN,
-	DMACH_AC97_PCMIN,
-	DMACH_AC97_PCMOUT,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-};
-
 static struct dma_pl330_platdata exynos_pdma0_pdata;
 
 static AMBA_AHB_DEVICE(exynos_pdma0, "dma-pl330.0", 0x00041330,
-	EXYNOS5_PA_PDMA0, {EXYNOS5_IRQ_PDMA0}, &exynos_pdma0_pdata);
+	EXYNOS4_PA_PDMA0, {EXYNOS4_IRQ_PDMA0}, &exynos_pdma0_pdata);
 
 static u8 exynos4210_pdma1_peri[] = {
 	DMACH_PCM0_RX,
@@ -273,7 +204,7 @@ static u8 exynos4212_pdma1_peri[] = {
 	DMACH_MIPI_HSI7,
 };
 
-u8 exynos5250_pdma1_peri[] = {
+static u8 exynos5250_pdma1_peri[] = {
 	DMACH_PCM0_RX,
 	DMACH_PCM0_TX,
 	DMACH_PCM1_RX,
@@ -308,80 +239,10 @@ u8 exynos5250_pdma1_peri[] = {
 	DMACH_MIPI_HSI7,
 };
 
-static u8 exynos5410_pdma1_peri[] = {
-	DMACH_PCM0_RX,
-	DMACH_PCM0_TX,
-	DMACH_PCM1_RX,
-	DMACH_PCM1_TX,
-	DMACH_SPI1_RX,
-	DMACH_SPI1_TX,
-	DMACH_PWM,
-	DMACH_SPDIF,
-	DMACH_I2S0S_TX,
-	DMACH_I2S0_RX,
-	DMACH_I2S0_TX,
-	DMACH_I2S1_RX,
-	DMACH_I2S1_TX,
-	DMACH_UART0_RX,
-	DMACH_UART0_TX,
-	DMACH_UART1_RX,
-	DMACH_UART1_TX,
-	DMACH_UART3_RX,
-	DMACH_UART3_TX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_DISP1,
-	DMACH_MIPI_HSI1,
-	DMACH_MIPI_HSI3,
-	DMACH_MIPI_HSI5,
-	DMACH_MIPI_HSI7,
-};
-
-static u8 exynos5420_pdma1_peri[] = {
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_PCM1_RX,
-	DMACH_PCM1_TX,
-	DMACH_SPI1_RX,
-	DMACH_SPI1_TX,
-	DMACH_MAX,
-	DMACH_SPDIF,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_I2S1_RX,
-	DMACH_I2S1_TX,
-	DMACH_UART0_RX,
-	DMACH_UART0_TX,
-	DMACH_UART1_RX,
-	DMACH_UART1_TX,
-	DMACH_UART3_RX,
-	DMACH_UART3_TX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_DISP1,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-	DMACH_MAX,
-};
-
-struct dma_pl330_platdata exynos_pdma1_pdata;
+static struct dma_pl330_platdata exynos_pdma1_pdata;
 
 static AMBA_AHB_DEVICE(exynos_pdma1,  "dma-pl330.1", 0x00041330,
-	EXYNOS5_PA_PDMA1, {EXYNOS5_IRQ_PDMA1}, &exynos_pdma1_pdata);
+	EXYNOS4_PA_PDMA1, {EXYNOS4_IRQ_PDMA1}, &exynos_pdma1_pdata);
 
 static u8 mdma_peri[] = {
 	DMACH_MTOM_0,
@@ -394,30 +255,13 @@ static u8 mdma_peri[] = {
 	DMACH_MTOM_7,
 };
 
-static struct dma_pl330_platdata exynos_mdma_pdata = {
+static struct dma_pl330_platdata exynos_mdma1_pdata = {
 	.nr_valid_peri = ARRAY_SIZE(mdma_peri),
 	.peri_id = mdma_peri,
 };
 
-static AMBA_AHB_DEVICE(exynos_mdma,  "dma-pl330.2", 0x00041330,
-	EXYNOS5_PA_MDMA1, {EXYNOS5_IRQ_MDMA1}, &exynos_mdma_pdata);
-
-static u8 adma0_peri[] = {
-	DMACH_I2S0_TX,
-	DMACH_I2S0S_TX,
-	DMACH_I2S0_RX,
-	DMACH_PCM0_TX,
-	DMACH_PCM0_RX,
-	DMACH_MAX,
-};
-
-static struct dma_pl330_platdata exynos_adma0_pdata = {
-	.nr_valid_peri = ARRAY_SIZE(adma0_peri),
-	.peri_id = adma0_peri,
-};
-
-static AMBA_AHB_DEVICE(exynos_adma0,  "dma-pl330.3", 0x00041330,
-	EXYNOS5_PA_ADMA0, {EXYNOS5_IRQ_ADMA0}, &exynos_adma0_pdata);
+static AMBA_AHB_DEVICE(exynos_mdma1,  "dma-pl330.2", 0x00041330,
+	EXYNOS4_PA_MDMA1, {EXYNOS4_IRQ_MDMA1}, &exynos_mdma1_pdata);
 
 static int __init exynos_dma_init(void)
 {
@@ -431,6 +275,9 @@ static int __init exynos_dma_init(void)
 		exynos_pdma1_pdata.nr_valid_peri =
 			ARRAY_SIZE(exynos4210_pdma1_peri);
 		exynos_pdma1_pdata.peri_id = exynos4210_pdma1_peri;
+
+		if (samsung_rev() == EXYNOS4210_REV_0)
+			exynos_mdma1_device.res.start = EXYNOS4_PA_S_MDMA1;
 	} else if (soc_is_exynos4212() || soc_is_exynos4412()) {
 		exynos_pdma0_pdata.nr_valid_peri =
 			ARRAY_SIZE(exynos4212_pdma0_peri);
@@ -445,57 +292,30 @@ static int __init exynos_dma_init(void)
 		exynos_pdma1_pdata.nr_valid_peri =
 			ARRAY_SIZE(exynos5250_pdma1_peri);
 		exynos_pdma1_pdata.peri_id = exynos5250_pdma1_peri;
-	} else if (soc_is_exynos5410()) {
-		exynos_pdma0_pdata.nr_valid_peri =
-			ARRAY_SIZE(exynos5410_pdma0_peri);
-		exynos_pdma0_pdata.peri_id = exynos5410_pdma0_peri;
-		exynos_pdma1_pdata.nr_valid_peri =
-			ARRAY_SIZE(exynos5410_pdma1_peri);
-		exynos_pdma1_pdata.peri_id = exynos5410_pdma1_peri;
-	} else if (soc_is_exynos5420()) {
-		exynos_pdma0_pdata.nr_valid_peri =
-			ARRAY_SIZE(exynos5420_pdma0_peri);
-		exynos_pdma0_pdata.peri_id = exynos5420_pdma0_peri;
-		exynos_pdma1_pdata.nr_valid_peri =
-			ARRAY_SIZE(exynos5420_pdma1_peri);
-		exynos_pdma1_pdata.peri_id = exynos5420_pdma1_peri;
-		exynos_adma0_pdata.nr_valid_peri =
-			ARRAY_SIZE(adma0_peri);
-		exynos_adma0_pdata.peri_id = adma0_peri;
-	}
 
-	if (soc_is_exynos4210() || soc_is_exynos4212() || soc_is_exynos4412()) {
-		exynos_pdma0_device.res.start = EXYNOS4_PA_PDMA0;
-		exynos_pdma0_device.res.end = EXYNOS4_PA_PDMA0 + SZ_4K;
-		exynos_pdma0_device.irq[0] = EXYNOS4_IRQ_PDMA0;
-		exynos_pdma1_device.res.start = EXYNOS4_PA_PDMA1;
-		exynos_pdma1_device.res.end = EXYNOS4_PA_PDMA1 + SZ_4K;
-		exynos_pdma1_device.irq[0] = EXYNOS4_IRQ_PDMA1;
-		exynos_mdma_device.res.start = EXYNOS4_PA_MDMA1;
-		exynos_mdma_device.res.end = EXYNOS4_PA_MDMA1 + SZ_4K;
-		exynos_mdma_device.irq[0] = EXYNOS4_IRQ_MDMA1;
-	} else if (soc_is_exynos5410() || soc_is_exynos5420()) {
-		exynos_mdma_device.res.start = EXYNOS5_PA_MDMA0;
-		exynos_mdma_device.res.end = EXYNOS5_PA_MDMA0 + SZ_4K;
-		exynos_mdma_device.irq[0] = EXYNOS5_IRQ_MDMA0;
+		exynos_pdma0_device.res.start = EXYNOS5_PA_PDMA0;
+		exynos_pdma0_device.res.end = EXYNOS5_PA_PDMA0 + SZ_4K;
+		exynos_pdma0_device.irq[0] = EXYNOS5_IRQ_PDMA0;
+		exynos_pdma1_device.res.start = EXYNOS5_PA_PDMA1;
+		exynos_pdma1_device.res.end = EXYNOS5_PA_PDMA1 + SZ_4K;
+		exynos_pdma0_device.irq[0] = EXYNOS5_IRQ_PDMA1;
+		exynos_mdma1_device.res.start = EXYNOS5_PA_MDMA1;
+		exynos_mdma1_device.res.end = EXYNOS5_PA_MDMA1 + SZ_4K;
+		exynos_pdma0_device.irq[0] = EXYNOS5_IRQ_MDMA1;
 	}
 
 	dma_cap_set(DMA_SLAVE, exynos_pdma0_pdata.cap_mask);
 	dma_cap_set(DMA_CYCLIC, exynos_pdma0_pdata.cap_mask);
+	dma_cap_set(DMA_PRIVATE, exynos_pdma0_pdata.cap_mask);
 	amba_device_register(&exynos_pdma0_device, &iomem_resource);
 
 	dma_cap_set(DMA_SLAVE, exynos_pdma1_pdata.cap_mask);
 	dma_cap_set(DMA_CYCLIC, exynos_pdma1_pdata.cap_mask);
+	dma_cap_set(DMA_PRIVATE, exynos_pdma1_pdata.cap_mask);
 	amba_device_register(&exynos_pdma1_device, &iomem_resource);
 
-	dma_cap_set(DMA_MEMCPY, exynos_mdma_pdata.cap_mask);
-	amba_device_register(&exynos_mdma_device, &iomem_resource);
-
-	if (soc_is_exynos5420()) {
-		dma_cap_set(DMA_SLAVE, exynos_adma0_pdata.cap_mask);
-		dma_cap_set(DMA_CYCLIC, exynos_adma0_pdata.cap_mask);
-		amba_device_register(&exynos_adma0_device, &iomem_resource);
-	}
+	dma_cap_set(DMA_MEMCPY, exynos_mdma1_pdata.cap_mask);
+	amba_device_register(&exynos_mdma1_device, &iomem_resource);
 
 	return 0;
 }

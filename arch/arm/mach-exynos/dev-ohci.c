@@ -12,16 +12,16 @@
 
 #include <linux/dma-mapping.h>
 #include <linux/platform_device.h>
+#include <linux/platform_data/usb-ohci-exynos.h>
 
 #include <mach/irqs.h>
 #include <mach/map.h>
-#include <mach/ohci.h>
 
 #include <plat/devs.h>
 #include <plat/usb-phy.h>
 
 static struct resource exynos4_ohci_resource[] = {
-	[0] = DEFINE_RES_MEM(EXYNOS_PA_OHCI, SZ_256),
+	[0] = DEFINE_RES_MEM(EXYNOS4_PA_OHCI, SZ_256),
 	[1] = DEFINE_RES_IRQ(IRQ_USB_HOST),
 };
 
@@ -49,8 +49,4 @@ void __init exynos4_ohci_set_platdata(struct exynos4_ohci_platdata *pd)
 		npd->phy_init = s5p_usb_phy_init;
 	if (!npd->phy_exit)
 		npd->phy_exit = s5p_usb_phy_exit;
-	if (!npd->phy_suspend)
-		npd->phy_suspend = s5p_usb_phy_suspend;
-	if (!npd->phy_resume)
-		npd->phy_resume = s5p_usb_phy_resume;
 }
