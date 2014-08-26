@@ -513,10 +513,10 @@ static int s6e3ha1_set_acl(struct lcd_info *lcd, u8 force)
 {
 	int ret = 0, level = ACL_STATUS_15P;
 
-	if (lcd->siop_enable || LEVEL_IS_HBM(lcd->auto_brightness))
+	if (lcd->siop_enable)
 		goto acl_update;
 
-	if (!lcd->acl_enable)
+	if ((!lcd->acl_enable) || LEVEL_IS_HBM(lcd->auto_brightness))
 		level = ACL_STATUS_0P;
 
 acl_update:

@@ -1,7 +1,7 @@
 #
 # Makefile for the kernel mobicore drivers
 #
-GUD_ROOT_FOLDER := /home/pbuckley/android/system/kernel/samsung/exynos5420/drivers/gud
+GUD_ROOT_FOLDER := /home/pbuckley/android/aosp/kernel/samsung/exynos5420/drivers/gud/
 # add our modules to kernel.
 obj-$(CONFIG_MOBICORE_API) += mcKernelApi.o
 obj-$(CONFIG_MOBICORE_DRIVER) += mcDrvModule.o

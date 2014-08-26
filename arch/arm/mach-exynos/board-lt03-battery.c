@@ -758,7 +758,11 @@ sec_battery_platform_data_t sec_battery_pdata = {
 #endif
 #elif defined(CONFIG_CHAGALL)/*USA, Canna use csc files for setting*/
 #if defined(CONFIG_TARGET_LOCALE_USA)
+#if defined(CONFIG_CHAGALL_LTE)
+	.temp_high_threshold_event = 530,
+#else
 	.temp_high_threshold_event = 600,
+#endif
 	.temp_high_recovery_event = 460,
 	.temp_low_threshold_event = -50,
 	.temp_low_recovery_event = 0,

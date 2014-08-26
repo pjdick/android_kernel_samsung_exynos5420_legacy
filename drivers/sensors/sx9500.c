@@ -95,7 +95,7 @@ struct sx9500_p {
 };
 
 #if defined(CONFIG_TARGET_LOCALE_USA) && defined(CONFIG_CHAGALL_LTE)
-#define SX9500_NORMAL_TOUCH_CABLE_THRESHOLD	20
+#define SX9500_NORMAL_TOUCH_CABLE_THRESHOLD	22
 extern bool is_cable_attached;
 #endif
 

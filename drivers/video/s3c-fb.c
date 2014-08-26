@@ -2587,12 +2587,14 @@ static void s3c_fb_free_dma_buf(struct s3c_fb *sfb,
 #if !defined(CONFIG_FB_EXYNOS_FIMD_SYSMMU_DISABLE)
 #ifdef CONFIG_ARCH_EXYNOS4
 	iovmm_unmap(sfb->dev, dma->dma_addr);
+#else
+	ion_iovmm_unmap(dma->attachment, dma->dma_addr);
 #endif
 	dma_buf_unmap_attachment(dma->attachment, dma->sg_table,
 			DMA_BIDIRECTIONAL);
 
 	exynos_ion_sync_dmabuf_for_cpu(sfb->dev, dma->dma_buf,
-					dma->dma_buf->size, DMA_FROM_DEVICE);
+					dma->dma_buf->size, DMA_TO_DEVICE);
 #endif
 	dma_buf_detach(dma->dma_buf, dma->attachment);
 	dma_buf_put(dma->dma_buf);
@@ -3495,6 +3497,7 @@ static int s3c_fb_ioctl(struct fb_info *info, unsigned int cmd,
 		ret = s3c_fb_set_vsync_int(info, p.vsync);
 		break;
 
+#ifdef CONFIG_ION_EXYNOS
 	case S3CFB_WIN_CONFIG:
 		if (copy_from_user(&p.win_data,
 				   (struct s3c_fb_win_config_data __user *)arg,
@@ -3569,6 +3572,7 @@ static int s3c_fb_ioctl(struct fb_info *info, unsigned int cmd,
 		}
 		ret = 0;
 		break;
+#endif
 
 	default:
 		ret = -ENOTTY;
@@ -4810,11 +4814,6 @@ static int __devinit s3c_fb_probe(struct platform_device *pdev)
 
 	platid = platform_get_device_id(pdev);
 	fbdrv = (struct s3c_fb_driverdata *)platid->driver_data;
-
-	if (ion_register_special_device(ion_exynos, dev)) {
-		dev_err(dev, "ION special device is already registered\n");
-		return -EBUSY;
-	}
 
 	if (fbdrv->variant.nr_windows > S3C_FB_MAX_WIN) {
 		dev_err(dev, "too many windows, cannot attach\n");
