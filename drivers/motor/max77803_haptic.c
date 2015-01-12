@@ -245,7 +245,7 @@ void vibtonz_pwm(int nForce)
 	pwm_period = g_hap_data->pdata->period;
 	pwm_duty = pwm_period / 2 + ((pwm_period / 2 - 2) * nForce) / 127;
 
-#if !defined(CONFIG_CHAGALL)
+#if !defined(CONFIG_CHAGALL) && !defined(CONFIG_KLIMT)
 	if (pwm_duty > g_hap_data->pdata->duty)
 		pwm_duty = g_hap_data->pdata->duty;
 	else if (pwm_period - pwm_duty > g_hap_data->pdata->duty)

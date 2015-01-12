@@ -62,7 +62,9 @@
 #define TK_RUN_CHK 3
 
 /* Flip cover*/
+#ifndef CONFIG_KLIMT
 #define TKEY_FLIP_MODE
+#endif
 
 #ifdef TKEY_FLIP_MODE
 #define TK_BIT_FLIP	0x08

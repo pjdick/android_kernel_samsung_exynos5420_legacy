@@ -140,6 +140,11 @@ static struct mdnie_table *mdnie_find_table(struct mdnie_info *mdnie)
 		table = &accessibility_table[mdnie->accessibility];
 		goto exit;
 	} else if (IS_HBM(mdnie->auto_brightness)) {
+#if defined(CONFIG_LCD_MIPI_S6E3HA1) || defined(CONFIG_LCD_MIPI_S6TNMR7)
+		if((mdnie->scenario == BROWSER_MODE)|| (mdnie->scenario == EBOOK_MODE))
+			table = &hbm_table[HBM_ON_TEXT];
+		else
+#endif
 		table = &hbm_table[mdnie->hbm];
 		goto exit;
 #if defined(CONFIG_TDMB)
